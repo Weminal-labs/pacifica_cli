@@ -26,6 +26,9 @@ import type { PacificaConfig } from "../core/config/types.js";
 import { GuardrailChecker } from "../core/agent/guardrails.js";
 import { SpendingTracker } from "../core/agent/spending-tracker.js";
 import { AgentActionLogger } from "../core/agent/action-logger.js";
+import { getBinanceFundingRates } from "../core/funding/binance.js";
+import { getBybitFundingRates } from "../core/funding/bybit.js";
+import { toBinanceSymbolFallback, toBybitSymbolFallback } from "../core/funding/symbol-map.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -285,6 +288,148 @@ function registerReadTools(
         });
       } catch (err) {
         return fail(`Error fetching agent log: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+function registerFundingTools(
+  server: McpServer,
+  client: PacificaClient,
+): void {
+  // -----------------------------------------------------------------------
+  // pacifica_funding_rates
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_funding_rates",
+    "Get current funding rates for all Pacifica markets with price and APR",
+    {},
+    async () => {
+      try {
+        const markets = await client.getMarkets();
+        const data = markets.map((m) => ({
+          symbol: m.symbol,
+          fundingRate: m.fundingRate,
+          nextFundingRate: m.nextFundingRate,
+          annualizedApr: m.fundingRate * 3 * 365,
+          price: m.price,
+        }));
+        return ok(data);
+      } catch (err) {
+        return fail(`Error fetching funding rates: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_funding_arb_scan
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_funding_arb_scan",
+    "Compare funding rates across Pacifica, Binance, and Bybit to find arbitrage opportunities. Returns spreads and annualized APR.",
+    {
+      min_spread: z
+        .number()
+        .optional()
+        .describe("Minimum absolute spread (%) to include (default: 0)"),
+    },
+    async ({ min_spread }) => {
+      try {
+        const markets = await client.getMarkets();
+
+        const binanceSymbols = markets.map((m) => toBinanceSymbolFallback(m.symbol));
+        const bybitSymbols = markets.map((m) => toBybitSymbolFallback(m.symbol));
+
+        const [binanceRates, bybitRates] = await Promise.all([
+          getBinanceFundingRates(binanceSymbols),
+          getBybitFundingRates(bybitSymbols),
+        ]);
+
+        const rows = [];
+        const minSpreadFilter = min_spread ?? 0;
+
+        for (const market of markets) {
+          const pacRate = market.fundingRate;
+          const binSymbol = toBinanceSymbolFallback(market.symbol).toUpperCase();
+          const bybSymbol = toBybitSymbolFallback(market.symbol).toUpperCase();
+
+          const binData = binanceRates.get(binSymbol);
+          const bybData = bybitRates.get(bybSymbol);
+
+          const binRate = binData?.fundingRate ?? null;
+          const bybRate = bybData?.fundingRate ?? null;
+
+          let bestSpread = 0;
+          let bestAgainst = "";
+
+          if (binRate !== null && Math.abs(pacRate - binRate) > Math.abs(bestSpread)) {
+            bestSpread = pacRate - binRate;
+            bestAgainst = "Binance";
+          }
+          if (bybRate !== null && Math.abs(pacRate - bybRate) > Math.abs(bestSpread)) {
+            bestSpread = pacRate - bybRate;
+            bestAgainst = "Bybit";
+          }
+
+          if (Math.abs(bestSpread) < minSpreadFilter) continue;
+
+          const apr = bestSpread * 3 * 365;
+          let signal = "neutral";
+          if (Math.abs(bestSpread) >= 0.005) {
+            signal = bestSpread > 0 ? `SHORT_PAC_LONG_${bestAgainst.toUpperCase()}` : `LONG_PAC_SHORT_${bestAgainst.toUpperCase()}`;
+          }
+
+          rows.push({
+            symbol: market.symbol,
+            pacificaRate: pacRate,
+            binanceRate: binRate,
+            bybitRate: bybRate,
+            bestSpread,
+            bestAgainst,
+            annualizedApr: Math.round(apr * 10) / 10,
+            signal,
+            actionable: Math.abs(bestSpread) >= 0.02,
+          });
+        }
+
+        rows.sort((a, b) => Math.abs(b.bestSpread) - Math.abs(a.bestSpread));
+
+        return ok({
+          count: rows.length,
+          actionableCount: rows.filter((r) => r.actionable).length,
+          opportunities: rows,
+        });
+      } catch (err) {
+        return fail(`Error scanning funding arb: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_funding_history
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_funding_history",
+    "Get historical funding rates for a Pacifica market",
+    {
+      symbol: z.string().describe("Trading symbol (e.g. BTC, ETH, SOL)"),
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Number of historical entries to return (default: 20)"),
+    },
+    async ({ symbol, limit }) => {
+      try {
+        const history = await client.getFundingHistory(symbol, limit ?? 20);
+        return ok({
+          symbol,
+          count: history.length,
+          history,
+        });
+      } catch (err) {
+        return fail(`Error fetching funding history for ${symbol}: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
   );
@@ -784,6 +929,7 @@ async function main(): Promise<void> {
 
   // Register all tool handlers
   registerReadTools(server, client, config, guardrails, spendingTracker, logger);
+  registerFundingTools(server, client);
   registerWriteTools(server, client, config, guardrails, spendingTracker, logger);
 
   // -----------------------------------------------------------------------

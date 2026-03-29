@@ -58,20 +58,20 @@ Tasks currently being worked on or up next.
 
 ---
 
-## Backlog — Day 3
+## Active Sprint — Day 3
 
 | # | Status | Task | Feature | Notes |
 |---|--------|------|---------|-------|
-| T13 | `[ ]` | Build Binance funding rate fetcher | [M3](../features/m3-funding-rate-arb-scanner.md) | |
-| T14 | `[ ]` | Build Bybit funding rate fetcher | [M3](../features/m3-funding-rate-arb-scanner.md) | |
-| T20 | `[ ]` | Build symbol mapping (Pacifica <> Binance <> Bybit) | [M3](../features/m3-funding-rate-arb-scanner.md) | |
-| T21 | `[ ]` | Implement `pacifica funding` and `pacifica funding-arb` commands | [M3](../features/m3-funding-rate-arb-scanner.md) | |
-| T22 | `[ ]` | Add MCP tools: funding_rates, funding_arb_scan, funding_history | [M3](../features/m3-funding-rate-arb-scanner.md) | |
-| T15 | `[ ]` | Build smart order manager with poll loop and state persistence | [M2](../features/m2-smart-order-manager.md) | |
-| T16 | `[ ]` | Implement trailing stop logic | [M2](../features/m2-smart-order-manager.md) | |
-| T17 | `[ ]` | Implement `pacifica smart` CLI subcommands | [M2](../features/m2-smart-order-manager.md) | |
-| T40 | `[ ]` | Build Claude Code Skills (5 slash commands) | All | |
-| T41 | `[ ]` | Demo script rehearsal and polish | — | Run through 3x minimum |
+| T13 | `[x]` | Build Binance funding rate fetcher | [M3](../features/m3-funding-rate-arb-scanner.md) | |
+| T14 | `[x]` | Build Bybit funding rate fetcher | [M3](../features/m3-funding-rate-arb-scanner.md) | |
+| T20 | `[x]` | Build symbol mapping (Pacifica <> Binance <> Bybit) | [M3](../features/m3-funding-rate-arb-scanner.md) | |
+| T21 | `[x]` | Implement `pacifica funding` and `pacifica funding-arb` commands | [M3](../features/m3-funding-rate-arb-scanner.md) | |
+| T22 | `[x]` | Add MCP tools: funding_rates, funding_arb_scan, funding_history | [M3](../features/m3-funding-rate-arb-scanner.md) | |
+| T15 | `[x]` | Build smart order manager with poll loop and state persistence | [M2](../features/m2-smart-order-manager.md) | |
+| T16 | `[x]` | Implement trailing stop logic | [M2](../features/m2-smart-order-manager.md) | |
+| T17 | `[x]` | Implement `pacifica smart` CLI subcommands | [M2](../features/m2-smart-order-manager.md) | |
+| T40 | `[x]` | Build Claude Code Skills (5 slash commands) | All | |
+| T41 | `[x]` | Demo script rehearsal and polish | — | Run through 3x minimum |
 
 ---
 
@@ -125,6 +125,16 @@ Tasks currently being worked on or up next.
 | T33 | Journal logger module (append-only, period filtering, summaries) | M8 | 2026-03-29 |
 | T34 | Journal integration ready for trading flows | M8 | 2026-03-29 |
 | T35 | `pacifica journal` with daily/weekly/monthly views + --json | M8 | 2026-03-29 |
+| T13 | Binance funding rate fetcher (bulk + single + history) | M3 | 2026-03-29 |
+| T14 | Bybit funding rate fetcher (V5 API, bulk + single + history) | M3 | 2026-03-29 |
+| T20 | Symbol mapping (Pacifica ↔ Binance ↔ Bybit, 25 pairs) | M3 | 2026-03-29 |
+| T21 | `pacifica funding` + `pacifica funding-arb` commands | M3 | 2026-03-29 |
+| T22 | 3 MCP tools: funding_rates, funding_arb_scan, funding_history | M3 | 2026-03-29 |
+| T15 | Smart order manager with poll loop + JSON state persistence | M2 | 2026-03-29 |
+| T16 | Trailing stop logic (long/short, extreme tracking, auto-close) | M2 | 2026-03-29 |
+| T17 | `pacifica smart trailing/list/cancel` subcommands | M2 | 2026-03-29 |
+| T40 | 5 Claude Code slash commands (/scan, /trade, /status, /funding, /risk) | All | 2026-03-29 |
+| T41 | Demo script with all 9 feature sections | — | 2026-03-29 |
 
 ---
 
