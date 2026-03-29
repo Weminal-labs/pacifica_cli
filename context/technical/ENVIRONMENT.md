@@ -11,8 +11,7 @@
 | Key | Description | Set During |
 |-----|-------------|-----------|
 | `network` | `testnet` or `mainnet` | `pacifica init` |
-| `api_key` | Pacifica API key | `pacifica init` |
-| `api_secret` | Pacifica API secret | `pacifica init` |
+| `private_key` | Base58-encoded Ed25519 secret key (Solana wallet) | `pacifica init` |
 
 ### Trading Defaults (Optional)
 
@@ -21,6 +20,7 @@
 | `defaults.leverage` | Default leverage for new orders | `5` |
 | `defaults.tp_distance` | Default take-profit distance (%) | `3` |
 | `defaults.sl_distance` | Default stop-loss distance (%) | `2` |
+| `defaults.slippage` | Default slippage tolerance (%) | `0.5` |
 
 ### Agent Guardrails (Optional)
 
@@ -50,10 +50,19 @@
 
 | Service | Testnet URL | Mainnet URL |
 |---------|-------------|-------------|
-| Pacifica REST | TBD (need API docs) | TBD |
-| Pacifica WebSocket | TBD (need API docs) | TBD |
+| Pacifica REST | `https://test-api.pacifica.fi/api/v1` | `https://api.pacifica.fi/api/v1` |
+| Pacifica WebSocket | `wss://test-ws.pacifica.fi/ws` | `wss://ws.pacifica.fi/ws` |
 | Binance Public | `https://fapi.binance.com` | Same (public) |
 | Bybit Public | `https://api.bybit.com` | Same (public) |
+
+## Authentication
+
+Pacifica uses **Solana Ed25519 wallet signatures**, not HMAC API keys.
+
+- The `private_key` in config is a Base58-encoded Ed25519 secret key
+- Request signing: recursively sort keys, compact JSON serialize, sign with Ed25519, Base58-encode signature
+- Libraries used: `tweetnacl` for signing, `bs58` for Base58 encoding/decoding
+- No API key management needed — just a wallet keypair
 
 ## Local Data Files
 
@@ -71,6 +80,6 @@ All stored in `.pacifica/` directory (created automatically):
 ## Setup Instructions
 
 1. Run `pacifica init --testnet`
-2. Enter Pacifica testnet API key and secret (get from Pacifica testnet dashboard)
+2. Enter Base58-encoded Ed25519 private key (Solana wallet secret key)
 3. Set trading defaults and agent guardrails
 4. Wizard verifies connection automatically

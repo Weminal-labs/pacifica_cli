@@ -79,3 +79,14 @@
 **Options Considered:** Ship MCP tools without guardrails, add guardrails as P1
 **Rationale:** Trust is the product story. Kill switch, spending limits, and audit trail are what make agent trading viable, not reckless. Also a strong demo moment.
 **Consequences:** More work on Day 2. But without guardrails, the MCP server is a liability, not a feature.
+
+---
+
+### D8: Ed25519 wallet signing instead of API key HMAC
+
+**Decision:** Use Solana Ed25519 wallet signatures for authentication, not traditional API key HMAC.
+**Date:** 2026-03-29 (Day 1 build)
+**Context:** Pacifica uses Solana-style wallet authentication. Need to decide how to handle auth in the CLI.
+**Options Considered:** HMAC API key/secret, Ed25519 wallet signing
+**Rationale:** Pacifica's API requires Ed25519 signatures, not HMAC. Config stores a Base58-encoded private key. Using `tweetnacl` for signing and `bs58` for Base58 encoding/decoding. This eliminates API key management entirely — the user just needs their wallet keypair.
+**Consequences:** No API key rotation or management. Private key must be kept secure in `.pacifica.yaml`. Signing process involves recursive key sorting, compact JSON serialization, and Base58-encoded signatures.
