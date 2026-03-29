@@ -46,38 +46,26 @@ async function registerCommands(): Promise<void> {
     });
 
   // ---------------------------------------------------------------------------
-  // Subcommands – placeholders
+  // Subcommands – lazy-loaded implementations
   // ---------------------------------------------------------------------------
 
-  const tradeCmd = new Command("trade")
-    .description("Place trades on Pacifica DEX")
-    .action(() => {
-      console.log("Coming soon: trade");
-    });
+  const { createTradeCommand } = await import("./commands/trade.js");
+  const tradeCmd = createTradeCommand();
 
-  const ordersCmd = new Command("orders")
-    .description("Manage open orders")
-    .action(() => {
-      console.log("Coming soon: orders");
-    });
+  const { createOrdersCommand } = await import("./commands/orders.js");
+  const ordersCmd = createOrdersCommand();
 
-  const positionsCmd = new Command("positions")
-    .description("View and manage open positions")
-    .action(() => {
-      console.log("Coming soon: positions");
-    });
+  const { createPositionsCommand } = await import("./commands/positions.js");
+  const positionsCmd = createPositionsCommand();
 
-  const heatmapCmd = new Command("heatmap")
-    .description("Display market heatmap")
-    .action(() => {
-      console.log("Coming soon: heatmap");
-    });
+  const { createHeatmapCommand } = await import("./commands/heatmap.js");
+  const heatmapCmd = createHeatmapCommand();
 
-  const agentCmd = new Command("agent")
-    .description("Configure and manage the trading agent")
-    .action(() => {
-      console.log("Coming soon: agent");
-    });
+  const { createAgentCommand } = await import("./commands/agent.js");
+  const agentCmd = createAgentCommand();
+
+  const { createJournalCommand } = await import("./commands/journal.js");
+  const journalCmd = createJournalCommand();
 
   program.addCommand(initCmd);
   program.addCommand(scanCmd);
@@ -86,6 +74,7 @@ async function registerCommands(): Promise<void> {
   program.addCommand(positionsCmd);
   program.addCommand(heatmapCmd);
   program.addCommand(agentCmd);
+  program.addCommand(journalCmd);
 }
 
 // ---------------------------------------------------------------------------
