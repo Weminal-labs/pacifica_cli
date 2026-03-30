@@ -1,14 +1,14 @@
 # Feature: Market Scanner & Order Entry (M1)
 
-> **Status:** `draft`
+> **Status:** `done`
 > **Phase:** v1 — P0
-> **Last updated:** 2026-03-29
+> **Last updated:** 2026-03-30
 
 ---
 
 ## Summary
 
-The core trading loop. Live market overview with real-time data, order placement with TP/SL, order management, and position tracking. This is the foundation everything else builds on. Also includes the first 10 MCP tools for agent access.
+The core trading loop. Live market overview with real-time data, order placement with TP/SL, order management, and position tracking. This is the foundation everything else builds on. Also includes the MCP server with 23 tools (10 read + 5 analytics + 2 funding + 6 write) for agent access.
 
 ---
 
@@ -48,7 +48,7 @@ Both user types use this from day one:
 6. Show confirmation with estimated cost
 7. Send order via SDK
 8. Print fill confirmation: fill price, fees, margin impact
-9. Log to journal (M8), fire on_fill hook (M9)
+9. Log to journal (M8)
 
 ### `pacifica orders`
 1. Fetch open orders from API
@@ -71,7 +71,7 @@ Both user types use this from day one:
 2. If position > $1000, require confirmation
 3. Close at market via API
 4. Print: fill price, realized PnL, fees
-5. Log to journal, fire on_position_close hook
+5. Log to journal
 
 ### Edge Cases & Rules
 - WebSocket disconnect > 5s → fall back to REST polling every 2s
@@ -85,7 +85,7 @@ Both user types use this from day one:
 ## Connections
 
 - **Depends on:** Pacifica SDK wrapper (core), Config loader (core)
-- **Triggers:** M8 (journal logging on fills/closes), M9 (event hooks)
+- **Triggers:** M8 (journal logging on fills/closes)
 - **Shares data with:** M7 (heatmap uses position data), M3 (funding data shared), M5 (guardrails check on all writes)
 
 ---
@@ -97,7 +97,7 @@ Both user types use this from day one:
 | Market data | REST polling every 2s | WebSocket real-time ticks |
 | Order types | Market + limit | Market, limit, stop-limit, stop-market |
 | TP/SL | Set at order time | Modify after placement |
-| MCP tools | 10 core tools | 20+ tools including analytics |
+| MCP tools | 23 tools (10 read + 5 analytics + 2 funding + 6 write) | Additional tools as needed |
 | Table sorting | Fixed order | Sortable by any column |
 
 ---
@@ -113,13 +113,13 @@ Both user types use this from day one:
 
 | Task # | Status | What needs to be done |
 |--------|--------|-----------------------|
-| T2 | `[ ]` | Build Pacifica REST SDK client (auth, markets, orders, positions, account) |
-| T3 | `[ ]` | Build Pacifica WebSocket client with auto-reconnection |
-| T4 | `[ ]` | Implement `pacifica scan` command with Ink live table |
-| T5 | `[ ]` | Implement `pacifica trade buy/sell` with validation and confirmation |
-| T6 | `[ ]` | Implement `pacifica orders` list and `pacifica orders cancel` |
-| T7 | `[ ]` | Implement `pacifica positions` list and `pacifica positions close` |
-| T8 | `[ ]` | Build MCP server with 10 core tools |
+| T2 | `[x]` | Build Pacifica REST SDK client (auth, markets, orders, positions, account) |
+| T3 | `[x]` | Build Pacifica WebSocket client with auto-reconnection |
+| T4 | `[x]` | Implement `pacifica scan` command with Ink live table |
+| T5 | `[x]` | Implement `pacifica trade buy/sell` with validation and confirmation |
+| T6 | `[x]` | Implement `pacifica orders` list and `pacifica orders cancel` |
+| T7 | `[x]` | Implement `pacifica positions` list and `pacifica positions close` |
+| T8 | `[x]` | Build MCP server with 23 tools (10 read + 5 analytics + 2 funding + 6 write) |
 
 ---
 
@@ -140,7 +140,7 @@ Both user types use this from day one:
 
 ## Notes
 
-This is the P0 foundation. Everything else (heatmap, funding arb, smart orders, journal) depends on the SDK client and basic trading commands working correctly.
+This is the P0 foundation. Everything else (heatmap, funding, smart orders, journal) depends on the SDK client and basic trading commands working correctly.
 
 ---
 

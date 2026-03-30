@@ -6,9 +6,11 @@
 // Context Protocol (MCP).  Communicates over stdio so it can be launched by
 // any MCP-compatible host (Claude Desktop, Cursor, etc.).
 //
-// Tools are split into two categories:
-//   - Read tools  (8) -- market data, account info, agent introspection
-//   - Write tools (4) -- order placement, cancellation, TP/SL, position close
+// Tools are split into categories:
+//   - Read tools      (10) -- market data, account info, agent introspection
+//   - Analytics tools  (5) -- journal, PnL, heatmap, risk, smart orders
+//   - Funding tools    (2) -- funding rates, funding history
+//   - Write tools      (6) -- orders, positions, smart orders
 //
 // Every write tool passes through the GuardrailChecker before execution and
 // is recorded by the AgentActionLogger / SpendingTracker for auditability.
@@ -26,6 +28,9 @@ import type { PacificaConfig } from "../core/config/types.js";
 import { GuardrailChecker } from "../core/agent/guardrails.js";
 import { SpendingTracker } from "../core/agent/spending-tracker.js";
 import { AgentActionLogger } from "../core/agent/action-logger.js";
+import { JournalLogger } from "../core/journal/logger.js";
+import { calculateRiskSummary } from "../core/risk/calculator.js";
+import { SmartOrderManager } from "../core/smart/manager.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -290,6 +295,235 @@ function registerReadTools(
   );
 }
 
+function registerAnalyticsTools(
+  server: McpServer,
+  client: PacificaClient,
+  journalLogger: JournalLogger,
+  smartManager: SmartOrderManager,
+): void {
+  // -----------------------------------------------------------------------
+  // pacifica_trade_journal
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_trade_journal",
+    "Get trade journal entries with optional filtering by period and symbol",
+    {
+      period: z
+        .enum(["today", "week", "month", "all"])
+        .optional()
+        .describe("Time window (default: all)"),
+      symbol: z
+        .string()
+        .optional()
+        .describe("Filter by trading symbol (e.g. BTC, ETH)"),
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Maximum number of entries to return (default: all)"),
+    },
+    async ({ period, symbol, limit }) => {
+      try {
+        const entries = await journalLogger.getEntries({ period, symbol, limit });
+        return ok({
+          count: entries.length,
+          period: period ?? "all",
+          entries,
+        });
+      } catch (err) {
+        return fail(`Error fetching trade journal: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_pnl_summary
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_pnl_summary",
+    "Get PnL summary statistics: win rate, total PnL, avg win/loss, best/worst trade",
+    {
+      period: z
+        .enum(["today", "week", "month", "all"])
+        .optional()
+        .describe("Time window (default: today)"),
+    },
+    async ({ period }) => {
+      try {
+        const summary = await journalLogger.getSummary(period ?? "today");
+        return ok(summary);
+      } catch (err) {
+        return fail(`Error fetching PnL summary: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_position_heatmap
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_position_heatmap",
+    "Get a text-based position heatmap showing risk levels, PnL, and liquidation distance for all positions",
+    {},
+    async () => {
+      try {
+        const [positions, markets, account] = await Promise.all([
+          client.getPositions(),
+          client.getMarkets(),
+          client.getAccount(),
+        ]);
+
+        if (positions.length === 0) {
+          return ok({ message: "No open positions", positions: [] });
+        }
+
+        const summary = calculateRiskSummary(positions, markets, account);
+
+        // Build ASCII heatmap text
+        const lines: string[] = [];
+        lines.push(`Positions: ${summary.totalPositions} | Total PnL: $${summary.totalPnl.toFixed(2)} | Margin Used: ${summary.marginUsedPercent}%`);
+        if (summary.closestToLiq) {
+          lines.push(`Closest to liquidation: ${summary.closestToLiq.symbol} (${summary.closestToLiq.distance.toFixed(1)}%)`);
+        }
+        lines.push("");
+
+        for (const p of summary.positions) {
+          const riskIcon = p.riskLevel === "danger" ? "[!!!]" : p.riskLevel === "watch" ? "[! ]" : "[ok ]";
+          const pnlStr = p.pnlUsd >= 0 ? `+$${p.pnlUsd.toFixed(2)}` : `-$${Math.abs(p.pnlUsd).toFixed(2)}`;
+          const liqStr = p.liqDistancePercent !== undefined ? `${p.liqDistancePercent.toFixed(1)}% to liq` : "no liq data";
+          const bar = buildBar(p.liqDistancePercent);
+          lines.push(`${riskIcon} ${p.symbol} ${p.side.toUpperCase()} ${p.leverage.toFixed(1)}x | ${pnlStr} (${p.pnlPercent.toFixed(1)}%) | ${liqStr} ${bar}`);
+        }
+
+        return ok({ heatmap: lines.join("\n"), summary });
+      } catch (err) {
+        return fail(`Error generating heatmap: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_risk_summary
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_risk_summary",
+    "Get structured risk data for all positions: PnL, margin, leverage, liquidation distance, risk levels",
+    {},
+    async () => {
+      try {
+        const [positions, markets, account] = await Promise.all([
+          client.getPositions(),
+          client.getMarkets(),
+          client.getAccount(),
+        ]);
+
+        const summary = calculateRiskSummary(positions, markets, account);
+        return ok(summary);
+      } catch (err) {
+        return fail(`Error fetching risk summary: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_get_smart_orders
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_get_smart_orders",
+    "Get all smart orders (trailing stops, partial take-profits) with optional filtering",
+    {
+      status: z
+        .string()
+        .optional()
+        .describe("Filter by status: active, triggered, cancelled, error"),
+      symbol: z
+        .string()
+        .optional()
+        .describe("Filter by trading symbol (e.g. BTC, ETH)"),
+    },
+    async ({ status, symbol }) => {
+      try {
+        smartManager.load();
+        const orders = smartManager.getOrders({ status, symbol });
+        return ok({
+          count: orders.length,
+          activeCount: smartManager.getActiveCount(),
+          orders,
+        });
+      } catch (err) {
+        return fail(`Error fetching smart orders: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+/** Build a simple ASCII bar for liquidation distance. */
+function buildBar(liqDistance: number | undefined): string {
+  if (liqDistance === undefined) return "";
+  const maxLen = 20;
+  const filled = Math.min(maxLen, Math.round((liqDistance / 50) * maxLen));
+  return "[" + "█".repeat(filled) + "░".repeat(maxLen - filled) + "]";
+}
+
+function registerFundingTools(
+  server: McpServer,
+  client: PacificaClient,
+): void {
+  // -----------------------------------------------------------------------
+  // pacifica_funding_rates
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_funding_rates",
+    "Get current funding rates for all Pacifica markets with price and APR",
+    {},
+    async () => {
+      try {
+        const markets = await client.getMarkets();
+        const data = markets.map((m) => ({
+          symbol: m.symbol,
+          fundingRate: m.fundingRate,
+          nextFundingRate: m.nextFundingRate,
+          annualizedApr: m.fundingRate * 3 * 365,
+          price: m.price,
+        }));
+        return ok(data);
+      } catch (err) {
+        return fail(`Error fetching funding rates: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_funding_history
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_funding_history",
+    "Get historical funding rates for a Pacifica market",
+    {
+      symbol: z.string().describe("Trading symbol (e.g. BTC, ETH, SOL)"),
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Number of historical entries to return (default: 20)"),
+    },
+    async ({ symbol, limit }) => {
+      try {
+        const history = await client.getFundingHistory(symbol, limit ?? 20);
+        return ok({
+          symbol,
+          count: history.length,
+          history,
+        });
+      } catch (err) {
+        return fail(`Error fetching funding history for ${symbol}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
 function registerWriteTools(
   server: McpServer,
   client: PacificaClient,
@@ -297,6 +531,7 @@ function registerWriteTools(
   guardrails: GuardrailChecker,
   spendingTracker: SpendingTracker,
   logger: AgentActionLogger,
+  smartManager: SmartOrderManager,
 ): void {
   // -----------------------------------------------------------------------
   // 9. pacifica_place_order
@@ -747,6 +982,340 @@ function registerWriteTools(
       }
     },
   );
+
+  // -----------------------------------------------------------------------
+  // 13. pacifica_modify_order
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_modify_order",
+    "Modify an existing limit order (cancel and replace with new parameters)",
+    {
+      symbol: z.string().describe("Trading symbol (e.g. BTC, ETH, SOL)"),
+      order_id: z.number().int().positive().describe("The order ID to modify"),
+      price: z.number().positive().optional().describe("New limit price"),
+      size: z.number().positive().optional().describe("New order size"),
+      tp: z.number().positive().optional().describe("New take-profit trigger price"),
+      sl: z.number().positive().optional().describe("New stop-loss trigger price"),
+    },
+    async ({ symbol, order_id, price, size, tp, sl }) => {
+      const toolName = "pacifica_modify_order";
+      const params = { symbol, order_id, price, size, tp, sl };
+
+      try {
+        const check = guardrails.check({ action: "modify_order" });
+        if (!check.allowed) {
+          await logger.logRejection({
+            tool: toolName,
+            action: "modify_order",
+            params,
+            rejectionReason: check.reason!,
+            symbol,
+          });
+          return fail(`Modify rejected by guardrails: ${check.reason}`);
+        }
+
+        // Find existing order
+        const orders = await client.getOrders();
+        const existing = orders.find(
+          (o) => o.orderId === order_id && o.symbol.toUpperCase() === symbol.toUpperCase(),
+        );
+        if (!existing) {
+          return fail(`Order ${order_id} not found for ${symbol}. Use pacifica_get_orders to check.`);
+        }
+
+        // Cancel old order
+        await client.cancelOrder(symbol, order_id);
+
+        // Place new order with modified params
+        const newPrice = price ?? existing.price;
+        const newSize = size ?? existing.initialAmount;
+
+        const takeProfit: TpSlConfig | undefined = tp
+          ? { stop_price: String(tp) }
+          : undefined;
+        const stopLoss: TpSlConfig | undefined = sl
+          ? { stop_price: String(sl) }
+          : undefined;
+
+        const result = await client.placeLimitOrder({
+          symbol,
+          price: String(newPrice),
+          amount: String(newSize),
+          side: existing.side,
+          tif: "GTC",
+          reduce_only: existing.reduceOnly,
+          take_profit: takeProfit,
+          stop_loss: stopLoss,
+        });
+
+        await logger.logSuccess({
+          tool: toolName,
+          action: "modify_order",
+          params,
+          response: { oldOrderId: order_id, newOrderId: result.orderId },
+          symbol,
+        });
+
+        return ok({
+          success: true,
+          oldOrderId: order_id,
+          newOrderId: result.orderId,
+          symbol,
+          price: newPrice,
+          size: newSize,
+          message: `Order ${order_id} replaced with new order ${result.orderId}`,
+        });
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        await logger.logError({
+          tool: toolName,
+          action: "modify_order",
+          params,
+          response: { error: errorMessage },
+          symbol,
+        });
+        return fail(`Failed to modify order ${order_id}: ${errorMessage}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // 14. pacifica_set_trailing_stop
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_set_trailing_stop",
+    "Set a trailing stop on an open position. Tracks the best price and closes when price retraces by the specified distance.",
+    {
+      symbol: z.string().describe("Trading symbol (e.g. BTC, ETH, SOL)"),
+      distance_percent: z.number().positive().describe("Trail distance as percentage (e.g. 2 = 2%)"),
+      position_side: z
+        .enum(["long", "short"])
+        .optional()
+        .describe("Position side (auto-detected if omitted)"),
+    },
+    async ({ symbol, distance_percent, position_side }) => {
+      const toolName = "pacifica_set_trailing_stop";
+      const params = { symbol, distance_percent, position_side };
+
+      try {
+        const check = guardrails.check({ action: "set_trailing_stop" });
+        if (!check.allowed) {
+          await logger.logRejection({
+            tool: toolName,
+            action: "set_trailing_stop",
+            params,
+            rejectionReason: check.reason!,
+            symbol,
+          });
+          return fail(`Trailing stop rejected by guardrails: ${check.reason}`);
+        }
+
+        // Auto-detect position side if not provided
+        let side = position_side;
+        if (!side) {
+          const positions = await client.getPositions();
+          const pos = positions.find(
+            (p) => p.symbol.toUpperCase() === symbol.toUpperCase(),
+          );
+          if (!pos) {
+            return fail(`No open position found for ${symbol}. Cannot set trailing stop without a position.`);
+          }
+          side = pos.side;
+        }
+
+        smartManager.load();
+        const order = smartManager.addTrailingStop({
+          symbol,
+          positionSide: side,
+          distancePercent: distance_percent,
+        });
+
+        if (!smartManager.isRunning()) {
+          smartManager.start();
+        }
+
+        await logger.logSuccess({
+          tool: toolName,
+          action: "set_trailing_stop",
+          params,
+          response: { smartOrderId: order.id },
+          symbol,
+        });
+
+        return ok({
+          success: true,
+          smartOrderId: order.id,
+          symbol,
+          positionSide: side,
+          distancePercent: distance_percent,
+          message: `Trailing stop set for ${symbol} ${side} position with ${distance_percent}% distance`,
+        });
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        await logger.logError({
+          tool: toolName,
+          action: "set_trailing_stop",
+          params,
+          response: { error: errorMessage },
+          symbol,
+        });
+        return fail(`Failed to set trailing stop: ${errorMessage}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // 15. pacifica_set_partial_tp
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_set_partial_tp",
+    "Set partial take-profit levels on an open position. Closes a percentage of the position at each price level.",
+    {
+      symbol: z.string().describe("Trading symbol (e.g. BTC, ETH, SOL)"),
+      levels: z.array(z.object({
+        price: z.number().positive().describe("Target price to trigger this level"),
+        percent: z.number().positive().max(100).describe("Percentage of position to close (e.g. 25 = 25%)"),
+      })).min(1).describe("Take-profit levels"),
+      position_side: z
+        .enum(["long", "short"])
+        .optional()
+        .describe("Position side (auto-detected if omitted)"),
+    },
+    async ({ symbol, levels, position_side }) => {
+      const toolName = "pacifica_set_partial_tp";
+      const params = { symbol, levels, position_side };
+
+      try {
+        const check = guardrails.check({ action: "set_partial_tp" });
+        if (!check.allowed) {
+          await logger.logRejection({
+            tool: toolName,
+            action: "set_partial_tp",
+            params,
+            rejectionReason: check.reason!,
+            symbol,
+          });
+          return fail(`Partial TP rejected by guardrails: ${check.reason}`);
+        }
+
+        // Validate total percent doesn't exceed 100
+        const totalPercent = levels.reduce((sum, l) => sum + l.percent, 0);
+        if (totalPercent > 100) {
+          return fail(`Total percentage across levels (${totalPercent}%) exceeds 100%.`);
+        }
+
+        // Auto-detect position side
+        let side = position_side;
+        if (!side) {
+          const positions = await client.getPositions();
+          const pos = positions.find(
+            (p) => p.symbol.toUpperCase() === symbol.toUpperCase(),
+          );
+          if (!pos) {
+            return fail(`No open position found for ${symbol}. Cannot set partial TP without a position.`);
+          }
+          side = pos.side;
+        }
+
+        smartManager.load();
+        const order = smartManager.addPartialTp({
+          symbol,
+          positionSide: side,
+          levels,
+        });
+
+        if (!smartManager.isRunning()) {
+          smartManager.start();
+        }
+
+        await logger.logSuccess({
+          tool: toolName,
+          action: "set_partial_tp",
+          params,
+          response: { smartOrderId: order.id },
+          symbol,
+        });
+
+        return ok({
+          success: true,
+          smartOrderId: order.id,
+          symbol,
+          positionSide: side,
+          levels,
+          message: `Partial take-profit set for ${symbol} ${side} with ${levels.length} level(s)`,
+        });
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        await logger.logError({
+          tool: toolName,
+          action: "set_partial_tp",
+          params,
+          response: { error: errorMessage },
+          symbol,
+        });
+        return fail(`Failed to set partial TP: ${errorMessage}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // 16. pacifica_cancel_smart_order
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_cancel_smart_order",
+    "Cancel an active smart order (trailing stop or partial take-profit) by ID",
+    {
+      smart_order_id: z.string().describe("The smart order ID to cancel"),
+    },
+    async ({ smart_order_id }) => {
+      const toolName = "pacifica_cancel_smart_order";
+      const params = { smart_order_id };
+
+      try {
+        const check = guardrails.check({ action: "cancel_smart_order" });
+        if (!check.allowed) {
+          await logger.logRejection({
+            tool: toolName,
+            action: "cancel_smart_order",
+            params,
+            rejectionReason: check.reason!,
+          });
+          return fail(`Cancel smart order rejected by guardrails: ${check.reason}`);
+        }
+
+        smartManager.load();
+        const cancelled = smartManager.cancel(smart_order_id);
+
+        if (!cancelled) {
+          return fail(`Smart order ${smart_order_id} not found or not active. Use pacifica_get_smart_orders to check.`);
+        }
+
+        await logger.logSuccess({
+          tool: toolName,
+          action: "cancel_smart_order",
+          params,
+          response: { cancelled: true, smartOrderId: smart_order_id },
+        });
+
+        return ok({
+          success: true,
+          smartOrderId: smart_order_id,
+          symbol: cancelled.symbol,
+          type: cancelled.type,
+          message: `Smart order ${smart_order_id} cancelled`,
+        });
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        await logger.logError({
+          tool: toolName,
+          action: "cancel_smart_order",
+          params,
+          response: { error: errorMessage },
+        });
+        return fail(`Failed to cancel smart order: ${errorMessage}`);
+      }
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -775,6 +1344,13 @@ async function main(): Promise<void> {
   const logger = new AgentActionLogger();
 
   // -----------------------------------------------------------------------
+  // 2b. Initialize analytics & smart order modules
+  // -----------------------------------------------------------------------
+  const journalLogger = new JournalLogger();
+  const smartManager = new SmartOrderManager(client);
+  smartManager.load();
+
+  // -----------------------------------------------------------------------
   // 3. Create and configure the MCP server
   // -----------------------------------------------------------------------
   const server = new McpServer({
@@ -784,7 +1360,9 @@ async function main(): Promise<void> {
 
   // Register all tool handlers
   registerReadTools(server, client, config, guardrails, spendingTracker, logger);
-  registerWriteTools(server, client, config, guardrails, spendingTracker, logger);
+  registerAnalyticsTools(server, client, journalLogger, smartManager);
+  registerFundingTools(server, client);
+  registerWriteTools(server, client, config, guardrails, spendingTracker, logger, smartManager);
 
   // -----------------------------------------------------------------------
   // 4. Connect transport and start serving

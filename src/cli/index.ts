@@ -67,6 +67,12 @@ async function registerCommands(): Promise<void> {
   const { createJournalCommand } = await import("./commands/journal.js");
   const journalCmd = createJournalCommand();
 
+  const { createFundingCommand } = await import("./commands/funding.js");
+  const fundingCmd = createFundingCommand();
+
+  const { createSmartCommand } = await import("./commands/smart.js");
+  const smartCmd = createSmartCommand();
+
   program.addCommand(initCmd);
   program.addCommand(scanCmd);
   program.addCommand(tradeCmd);
@@ -75,6 +81,8 @@ async function registerCommands(): Promise<void> {
   program.addCommand(heatmapCmd);
   program.addCommand(agentCmd);
   program.addCommand(journalCmd);
+  program.addCommand(fundingCmd);
+  program.addCommand(smartCmd);
 }
 
 // ---------------------------------------------------------------------------

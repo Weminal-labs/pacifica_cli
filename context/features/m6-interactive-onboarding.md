@@ -1,8 +1,8 @@
 # Feature: Interactive Onboarding — `pacifica init` (M6)
 
-> **Status:** `draft`
+> **Status:** `done`
 > **Phase:** v1 — P0 (build FIRST)
-> **Last updated:** 2026-03-29
+> **Last updated:** 2026-03-30
 
 ---
 
@@ -89,10 +89,10 @@ First-run experience. 5-step wizard that takes a user from zero to live data in 
 
 | Task # | Status | What needs to be done |
 |--------|--------|-----------------------|
-| T1 | `[ ]` | Project scaffolding: pnpm init, tsconfig, tsup config, commander setup, package.json bin |
-| T26 | `[ ]` | Build config loader/writer (read/write .pacifica.yaml with validation) |
-| T27 | `[ ]` | Implement `pacifica init` wizard with @inquirer/prompts |
-| T28 | `[ ]` | Implement connection verification step (REST + WebSocket test) |
+| T1 | `[x]` | Project scaffolding: pnpm init, tsconfig, tsup config, commander setup, package.json bin |
+| T26 | `[x]` | Build config loader/writer (read/write .pacifica.yaml with validation) |
+| T27 | `[x]` | Implement `pacifica init` wizard with @inquirer/prompts |
+| T28 | `[x]` | Implement connection verification step (REST + WebSocket test) |
 
 ---
 

@@ -1,8 +1,8 @@
 # Feature: Smart Order Manager (M2)
 
-> **Status:** `draft`
-> **Phase:** v1 — P1 (trailing stop), P2 (DCA, time stop, breakeven)
-> **Last updated:** 2026-03-29
+> **Status:** `done` (trailing stop, partial TP), `deferred` (DCA, time stop, breakeven)
+> **Phase:** v1 — P1 (trailing stop, partial TP), P2 (DCA, time stop, breakeven)
+> **Last updated:** 2026-03-30
 
 ---
 
@@ -14,7 +14,7 @@ Advanced order types that Pacifica doesn't natively support, running locally on 
 
 ## Users
 
-- **Minh:** "I can set a trailing stop on Binance. Why can't I do it on Pacifica?" Sets smart orders and walks away.
+- **Minh:** "I can set a trailing stop on other exchanges. Why can't I do it on Pacifica?" Sets smart orders and walks away.
 - **Sarah:** Uses MCP tools to set smart orders programmatically as part of larger strategy.
 
 ---
@@ -34,7 +34,7 @@ Advanced order types that Pacifica doesn't natively support, running locally on 
 2. Background loop polls position every 5s
 3. For longs: track highest price since creation. If price drops `distance` from high, trigger SL.
 4. For shorts: track lowest price since creation. If price rises `distance` from low, trigger SL.
-5. On trigger: close position at market, log to journal, fire hook
+5. On trigger: close position at market, log to journal
 
 ### Partial Take-Profit
 1. `pacifica smart partial-tp ETH-PERP --levels 4000:50% 4200:25%`
@@ -80,10 +80,10 @@ Advanced order types that Pacifica doesn't natively support, running locally on 
 
 | Task # | Status | What needs to be done |
 |--------|--------|-----------------------|
-| T15 | `[ ]` | Build smart order manager with poll loop and state persistence |
-| T16 | `[ ]` | Implement trailing stop logic |
-| T17 | `[ ]` | Implement `pacifica smart` CLI subcommands (trailing, list, cancel) |
-| T18 | `[>]` | Implement partial take-profit logic (P2) |
+| T15 | `[x]` | Build smart order manager with poll loop and state persistence |
+| T16 | `[x]` | Implement trailing stop logic |
+| T17 | `[x]` | Implement `pacifica smart` CLI subcommands (trailing, list, cancel) |
+| T18 | `[x]` | Implement partial take-profit logic |
 | T19 | `[>]` | Implement DCA entry, breakeven auto, time stop (P2) |
 
 ---

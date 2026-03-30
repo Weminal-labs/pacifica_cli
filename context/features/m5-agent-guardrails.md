@@ -1,8 +1,8 @@
 # Feature: Agent Guardrails Dashboard (M5)
 
-> **Status:** `draft`
+> **Status:** `done`
 > **Phase:** v1 — P0
-> **Last updated:** 2026-03-29
+> **Last updated:** 2026-03-30
 
 ---
 
@@ -91,10 +91,10 @@ Before every MCP write operation:
 
 | Task # | Status | What needs to be done |
 |--------|--------|-----------------------|
-| T9 | `[ ]` | Build guardrail checker module (enabled, action list, spending limit, order size) |
-| T10 | `[ ]` | Build daily spending tracker with midnight reset |
-| T11 | `[ ]` | Build agent action logger (append to agent-log.json) |
-| T12 | `[ ]` | Implement `pacifica agent status/stop/start/config/log` commands |
+| T9 | `[x]` | Build guardrail checker module (enabled, action list, spending limit, order size) |
+| T10 | `[x]` | Build daily spending tracker with midnight reset |
+| T11 | `[x]` | Build agent action logger (append to agent-log.json) |
+| T12 | `[x]` | Implement `pacifica agent status/stop/start/config/log` commands |
 
 ---
 

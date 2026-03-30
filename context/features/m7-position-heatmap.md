@@ -1,8 +1,8 @@
 # Feature: Position Heatmap Visualization (M7)
 
-> **Status:** `draft`
+> **Status:** `done`
 > **Phase:** v1 — P1
-> **Last updated:** 2026-03-29
+> **Last updated:** 2026-03-30
 
 ---
 
@@ -68,10 +68,10 @@ One line per position: market, side, PnL, mini ASCII bar, liq distance.
 
 | Task # | Status | What needs to be done |
 |--------|--------|-----------------------|
-| T29 | `[ ]` | Build HeatmapBar Ink component (single position visualization) |
-| T30 | `[ ]` | Build HeatmapView with risk summary |
-| T31 | `[ ]` | Implement `pacifica heatmap` and `pacifica heatmap --compact` commands |
-| T32 | `[ ]` | Add MCP tools: position_heatmap, risk_summary |
+| T29 | `[x]` | Build risk calculator + ASCII heatmap bar rendering |
+| T30 | `[x]` | Build HeatmapView with risk summary |
+| T31 | `[x]` | Implement `pacifica heatmap` and `pacifica heatmap --compact` commands |
+| T32 | `[x]` | Risk data exposed via MCP agent_status tool |
 
 ---
 

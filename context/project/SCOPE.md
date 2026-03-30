@@ -17,7 +17,7 @@
 
 ### P1 — High Value, Build If Time
 - Position heatmap visualization (`pacifica heatmap`)
-- Funding rate arb scanner (`pacifica funding-arb`) with Binance/Bybit comparison
+- Funding rate scanner (`pacifica funding`)
 - PnL journal — auto-logging trades to local JSON
 - Smart orders — trailing stop + partial take-profit
 - Claude Code Skills (5 slash commands)

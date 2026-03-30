@@ -84,7 +84,7 @@ Terminal monospace font — no choice here. Design for:
 | htop / btop | Real-time updating, color-coded bars |
 | lazygit | Responsive keybinding-driven TUI |
 | Bloomberg Terminal | Information density, everything visible at once |
-| Bybit desktop terminal | Order entry layout, position table columns |
+| Professional trading terminals | Order entry layout, position table columns |
 
 ## Hard Nos
 

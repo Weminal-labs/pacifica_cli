@@ -29,7 +29,7 @@
 | Choice | Why |
 |--------|-----|
 | **ws** | WebSocket client for real-time market data from Pacifica. Lightweight, battle-tested. |
-| **node built-in fetch** | REST API calls to Pacifica, Binance, Bybit. No extra HTTP client dependency needed. |
+| **node built-in fetch** | REST API calls to Pacifica. No extra HTTP client dependency needed. |
 | **fastify** | Local HTTP server for TradingView webhook bridge (P2). Lightweight, typed, fast. |
 
 ## Config & Storage
@@ -59,8 +59,6 @@
 |-----|------|---------|
 | **Pacifica REST API** | API key + secret | Markets, orders, positions, account |
 | **Pacifica WebSocket** | API key + secret | Real-time ticker, fills, position updates |
-| **Binance Public API** | None (public) | Funding rate comparison for arb scanner |
-| **Bybit Public API** | None (public) | Funding rate comparison for arb scanner |
 
 ## Rationale
 
