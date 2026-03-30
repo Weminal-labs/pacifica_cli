@@ -32,5 +32,3 @@ All data is local filesystem:
 |---------|-----------|----------|
 | Pacifica REST API | Required for all operations | Retry with backoff |
 | Pacifica WebSocket | Required for live data | Fall back to REST polling every 2s |
-| Binance Public API | Optional (funding arb only) | Show "N/A" if unavailable |
-| Bybit Public API | Optional (funding arb only) | Show "N/A" if unavailable |

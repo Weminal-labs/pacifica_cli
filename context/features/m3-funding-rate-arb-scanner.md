@@ -1,28 +1,27 @@
-# Feature: Funding Rate Arbitrage Scanner (M3)
+# Feature: Funding Rate Scanner (M3)
 
-> **Status:** `draft`
+> **Status:** `done`
 > **Phase:** v1 — P1
-> **Last updated:** 2026-03-29
+> **Last updated:** 2026-03-30
 
 ---
 
 ## Summary
 
-Monitors funding rates on Pacifica vs Binance and Bybit. Signals when spreads are tradeable with annualized APR calculations. Saves Minh from manually cross-referencing rates across 3 exchanges every 8 hours.
+Monitors funding rates on Pacifica. Displays current and predicted rates with annualized APR calculations. Helps traders plan around funding settlements.
 
 ---
 
 ## Users
 
-- **Minh:** Checks funding spreads every morning. Currently does this in a spreadsheet.
-- **AI Agent:** Analyzes funding data and suggests delta-neutral trades with position sizing.
+- **Minh:** Checks funding rates every morning to plan positions around settlements.
+- **AI Agent:** Analyzes funding data and suggests trades with position sizing.
 
 ---
 
 ## User Stories
 
 - As a **trader**, I want to see current funding rates for all Pacifica markets so I can plan around funding settlements
-- As a **trader**, I want to compare Pacifica funding vs Binance and Bybit so I can spot arb opportunities
 - As an **AI agent**, I want funding data in structured format so I can calculate APR and recommend trades
 
 ---
@@ -31,19 +30,11 @@ Monitors funding rates on Pacifica vs Binance and Bybit. Signals when spreads ar
 
 ### `pacifica funding`
 1. Fetch funding rates from Pacifica API
-2. Table: market, current rate, next funding time (countdown), predicted rate
-3. Handle markets with no funding data
-
-### `pacifica funding-arb`
-1. Fetch funding rates from Pacifica, Binance, Bybit in parallel
-2. Table: market, Pacifica rate, Binance rate, Bybit rate, spread, annualized APR, signal
-3. APR = spread x (365 x 3) for 8h funding
-4. Signal: SHORT PAC (Pacifica rate higher) or LONG PAC (Pacifica rate lower)
-5. Highlight spreads > 0.02% as actionable
+2. Table: market, current rate, predicted rate, annualized APR, price
+3. Sort by absolute funding rate descending
+4. Handle markets with no funding data
 
 ### Edge Cases & Rules
-- Binance/Bybit APIs are public (no auth). Handle failures gracefully — show "N/A"
-- Match market symbols across exchanges (ETH-PERP on Pacifica = ETHUSDT on Binance)
 - Cache funding data locally to reduce API calls for history view
 
 ---
@@ -60,26 +51,21 @@ Monitors funding rates on Pacifica vs Binance and Bybit. Signals when spreads ar
 
 | Aspect | MVP (v1) | Full Version |
 |--------|----------|--------------|
-| Exchanges | Pacifica + Binance + Bybit | Add OKX, dYdX, Hyperliquid |
 | History | Current rates only | ASCII sparkline of 7d history |
-| Alert | Manual check | Auto-alert when spread > threshold |
+| Alert | Manual check | Auto-alert when rate > threshold |
 
 ---
 
 ## Security Considerations
 
-- Binance/Bybit are read-only public endpoints — no auth risk
 - Don't log full API responses (may contain tracking headers)
 
 ## Tasks
 
 | Task # | Status | What needs to be done |
 |--------|--------|-----------------------|
-| T13 | `[ ]` | Build Binance funding rate fetcher |
-| T14 | `[ ]` | Build Bybit funding rate fetcher |
-| T20 | `[ ]` | Build symbol mapping (Pacifica ↔ Binance ↔ Bybit) |
-| T21 | `[ ]` | Implement `pacifica funding` and `pacifica funding-arb` commands |
-| T22 | `[ ]` | Add MCP tools: funding_rates, funding_arb_scan, funding_history |
+| T21 | `[x]` | Implement `pacifica funding` command |
+| T22 | `[x]` | Add MCP tools: funding_rates, funding_history |
 
 ---
 
@@ -95,3 +81,5 @@ Monitors funding rates on Pacifica vs Binance and Bybit. Signals when spreads ar
 ---
 
 ## Archive
+
+- T13, T14, T20 removed — external exchange integrations (Binance/Bybit) dropped from scope (2026-03-30)

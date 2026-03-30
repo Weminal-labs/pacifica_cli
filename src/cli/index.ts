@@ -67,9 +67,8 @@ async function registerCommands(): Promise<void> {
   const { createJournalCommand } = await import("./commands/journal.js");
   const journalCmd = createJournalCommand();
 
-  const { createFundingCommand, createFundingArbCommand } = await import("./commands/funding.js");
+  const { createFundingCommand } = await import("./commands/funding.js");
   const fundingCmd = createFundingCommand();
-  const fundingArbCmd = createFundingArbCommand();
 
   const { createSmartCommand } = await import("./commands/smart.js");
   const smartCmd = createSmartCommand();
@@ -83,7 +82,6 @@ async function registerCommands(): Promise<void> {
   program.addCommand(agentCmd);
   program.addCommand(journalCmd);
   program.addCommand(fundingCmd);
-  program.addCommand(fundingArbCmd);
   program.addCommand(smartCmd);
 }
 

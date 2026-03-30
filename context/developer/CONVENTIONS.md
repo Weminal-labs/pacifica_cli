@@ -11,7 +11,7 @@
 | Functions | camelCase | `placeOrder()`, `getFundingRates()` |
 | Types/Interfaces | PascalCase | `Market`, `OrderRequest`, `SmartOrder` |
 | Constants | UPPER_SNAKE | `MAX_RETRY_ATTEMPTS`, `DEFAULT_LEVERAGE` |
-| CLI commands | kebab-case | `funding-arb`, `smart-order` |
+| CLI commands | kebab-case | `funding`, `smart-order` |
 | MCP tools | snake_case | `pacifica_place_order`, `pacifica_get_markets` |
 | Config keys | snake_case | `api_key`, `daily_spending_limit` |
 

@@ -1,8 +1,8 @@
 # Feature: PnL Journal & Trade Log (M8)
 
-> **Status:** `draft`
+> **Status:** `done`
 > **Phase:** v1 — P1
-> **Last updated:** 2026-03-29
+> **Last updated:** 2026-03-30
 
 ---
 
@@ -65,9 +65,9 @@ Export to file for external analysis.
 
 | Task # | Status | What needs to be done |
 |--------|--------|-----------------------|
-| T33 | `[ ]` | Build journal logger module (append to JSON) |
-| T34 | `[ ]` | Integrate journal logging into order fill and position close flows |
-| T35 | `[ ]` | Implement `pacifica journal` command with daily/weekly/monthly views |
+| T33 | `[x]` | Build journal logger module (append to JSON) |
+| T34 | `[x]` | Integrate journal logging into order fill and position close flows |
+| T35 | `[x]` | Implement `pacifica journal` command with daily/weekly/monthly views |
 | T36 | `[>]` | Implement journal export (CSV/JSON) — P2 |
 
 ---

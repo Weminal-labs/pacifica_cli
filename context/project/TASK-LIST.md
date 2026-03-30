@@ -43,7 +43,7 @@ Tasks currently being worked on or up next.
 | T5 | `[x]` | Implement `pacifica trade buy/sell` with validation and confirmation | [M1](../features/m1-market-scanner-order-entry.md) | |
 | T6 | `[x]` | Implement `pacifica orders` list and `pacifica orders cancel` | [M1](../features/m1-market-scanner-order-entry.md) | |
 | T7 | `[x]` | Implement `pacifica positions` list and `pacifica positions close` | [M1](../features/m1-market-scanner-order-entry.md) | |
-| T8 | `[x]` | Build MCP server with 12 tools (8 read + 4 write) | [M1](../features/m1-market-scanner-order-entry.md) | The differentiator |
+| T8 | `[x]` | Build MCP server with 23 tools (10 read + 5 analytics + 2 funding + 6 write) | [M1](../features/m1-market-scanner-order-entry.md) | The differentiator |
 | T9 | `[x]` | Build guardrail checker module | [M5](../features/m5-agent-guardrails.md) | |
 | T10 | `[x]` | Build daily spending tracker with midnight reset | [M5](../features/m5-agent-guardrails.md) | |
 | T11 | `[x]` | Build agent action logger | [M5](../features/m5-agent-guardrails.md) | |
@@ -62,16 +62,15 @@ Tasks currently being worked on or up next.
 
 | # | Status | Task | Feature | Notes |
 |---|--------|------|---------|-------|
-| T13 | `[x]` | Build Binance funding rate fetcher | [M3](../features/m3-funding-rate-arb-scanner.md) | |
-| T14 | `[x]` | Build Bybit funding rate fetcher | [M3](../features/m3-funding-rate-arb-scanner.md) | |
-| T20 | `[x]` | Build symbol mapping (Pacifica <> Binance <> Bybit) | [M3](../features/m3-funding-rate-arb-scanner.md) | |
-| T21 | `[x]` | Implement `pacifica funding` and `pacifica funding-arb` commands | [M3](../features/m3-funding-rate-arb-scanner.md) | |
-| T22 | `[x]` | Add MCP tools: funding_rates, funding_arb_scan, funding_history | [M3](../features/m3-funding-rate-arb-scanner.md) | |
+| T21 | `[x]` | Implement `pacifica funding` command | [M3](../features/m3-funding-rate-arb-scanner.md) | |
+| T22 | `[x]` | Add MCP tools: funding_rates, funding_history | [M3](../features/m3-funding-rate-arb-scanner.md) | |
 | T15 | `[x]` | Build smart order manager with poll loop and state persistence | [M2](../features/m2-smart-order-manager.md) | |
 | T16 | `[x]` | Implement trailing stop logic | [M2](../features/m2-smart-order-manager.md) | |
 | T17 | `[x]` | Implement `pacifica smart` CLI subcommands | [M2](../features/m2-smart-order-manager.md) | |
 | T40 | `[x]` | Build Claude Code Skills (5 slash commands) | All | |
 | T41 | `[x]` | Demo script rehearsal and polish | — | Run through 3x minimum |
+| T42 | `[x]` | Add 5 analytics MCP tools (journal, pnl_summary, heatmap, risk, smart_orders) | [M1](../features/m1-market-scanner-order-entry.md) | Read tools |
+| T43 | `[x]` | Add 4 write MCP tools (modify_order, trailing_stop, partial_tp, cancel_smart) | [M1](../features/m1-market-scanner-order-entry.md) | Write tools |
 
 ---
 
@@ -79,7 +78,7 @@ Tasks currently being worked on or up next.
 
 | # | Status | Task | Feature | Notes |
 |---|--------|------|---------|-------|
-| T18 | `[>]` | Implement partial take-profit logic | [M2](../features/m2-smart-order-manager.md) | P2 |
+| T18 | `[x]` | Implement partial take-profit logic | [M2](../features/m2-smart-order-manager.md) | Core + MCP tool |
 | T19 | `[>]` | Implement DCA entry, breakeven auto, time stop | [M2](../features/m2-smart-order-manager.md) | P2 |
 | T23 | `[>]` | Build webhook HTTP server with fastify | [M4](../features/m4-tradingview-webhook-bridge.md) | P2 stretch |
 | T24 | `[>]` | Implement webhook validation and order execution | [M4](../features/m4-tradingview-webhook-bridge.md) | P2 stretch |
@@ -125,16 +124,16 @@ Tasks currently being worked on or up next.
 | T33 | Journal logger module (append-only, period filtering, summaries) | M8 | 2026-03-29 |
 | T34 | Journal integration ready for trading flows | M8 | 2026-03-29 |
 | T35 | `pacifica journal` with daily/weekly/monthly views + --json | M8 | 2026-03-29 |
-| T13 | Binance funding rate fetcher (bulk + single + history) | M3 | 2026-03-29 |
-| T14 | Bybit funding rate fetcher (V5 API, bulk + single + history) | M3 | 2026-03-29 |
-| T20 | Symbol mapping (Pacifica ↔ Binance ↔ Bybit, 25 pairs) | M3 | 2026-03-29 |
-| T21 | `pacifica funding` + `pacifica funding-arb` commands | M3 | 2026-03-29 |
-| T22 | 3 MCP tools: funding_rates, funding_arb_scan, funding_history | M3 | 2026-03-29 |
+| T21 | `pacifica funding` command (Pacifica-only) | M3 | 2026-03-29 |
+| T22 | 2 MCP tools: funding_rates, funding_history | M3 | 2026-03-29 |
 | T15 | Smart order manager with poll loop + JSON state persistence | M2 | 2026-03-29 |
 | T16 | Trailing stop logic (long/short, extreme tracking, auto-close) | M2 | 2026-03-29 |
 | T17 | `pacifica smart trailing/list/cancel` subcommands | M2 | 2026-03-29 |
 | T40 | 5 Claude Code slash commands (/scan, /trade, /status, /funding, /risk) | All | 2026-03-29 |
 | T41 | Demo script with all 9 feature sections | — | 2026-03-29 |
+| T18 | Partial take-profit core logic (types, manager, poll loop) | M2 | 2026-03-30 |
+| T42 | 5 analytics MCP tools (journal, pnl_summary, heatmap, risk, smart_orders) | M1 | 2026-03-30 |
+| T43 | 4 write MCP tools (modify_order, trailing_stop, partial_tp, cancel_smart) | M1 | 2026-03-30 |
 
 ---
 

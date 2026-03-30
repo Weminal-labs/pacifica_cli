@@ -1,8 +1,8 @@
 # Feature: TradingView Webhook Bridge (M4)
 
-> **Status:** `draft`
+> **Status:** `deferred` — not implemented, pushed to post-hackathon
 > **Phase:** v1 — P2 (stretch goal)
-> **Last updated:** 2026-03-29
+> **Last updated:** 2026-03-30
 
 ---
 

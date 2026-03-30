@@ -2,7 +2,7 @@
 // Smart Order Manager -- Type Definitions
 // ---------------------------------------------------------------------------
 
-export type SmartOrderType = "trailing_stop";
+export type SmartOrderType = "trailing_stop" | "partial_tp";
 export type SmartOrderStatus = "active" | "triggered" | "cancelled" | "error";
 
 // ---------------------------------------------------------------------------
@@ -16,6 +16,28 @@ export interface TrailingStopConfig {
   positionSide: "long" | "short";
   /** Trail distance as a percentage (e.g. 2 = 2%). */
   distancePercent: number;
+}
+
+// ---------------------------------------------------------------------------
+// Partial Take-Profit
+// ---------------------------------------------------------------------------
+
+export interface PartialTpLevel {
+  /** Target price to trigger this level. */
+  price: number;
+  /** Percentage of position to close (e.g. 25 = 25%). */
+  percent: number;
+  /** Whether this level has already been triggered. */
+  triggered?: boolean;
+}
+
+export interface PartialTpConfig {
+  /** Symbol to monitor (Pacifica format, e.g. "BTC"). */
+  symbol: string;
+  /** Position side being managed. */
+  positionSide: "long" | "short";
+  /** Take-profit levels in order. */
+  levels: PartialTpLevel[];
 }
 
 // ---------------------------------------------------------------------------
@@ -40,6 +62,9 @@ export interface SmartOrder {
   triggerPrice: number;
   /** Error message if status is "error". */
   errorMessage?: string;
+
+  // Partial TP specific fields
+  levels?: PartialTpLevel[];
 }
 
 // ---------------------------------------------------------------------------

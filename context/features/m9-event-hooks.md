@@ -1,8 +1,8 @@
 # Feature: Event Hooks System (M9)
 
-> **Status:** `draft`
+> **Status:** `deferred` — not implemented, pushed to post-hackathon
 > **Phase:** v1 — P2
-> **Last updated:** 2026-03-29
+> **Last updated:** 2026-03-30
 
 ---
 

@@ -36,11 +36,11 @@
 
 | Order | Task | Module | Est. Hours |
 |-------|------|--------|-----------|
-| 15 | Funding rate arb scanner | M3 | 2-3h |
+| 15 | Funding rate scanner | M3 | 1-2h |
 | 16 | Smart orders — trailing stop | M2 | 2-3h |
 | 17 | Claude Code Skills (5 slash commands) | All | 1-2h |
-| 18 | Event hooks system | M9 | 2h |
-| 19 | TradingView webhook bridge (stretch) | M4 | 2-3h |
+| 18 | Event hooks system (deferred) | M9 | 2h |
+| 19 | TradingView webhook bridge (deferred) | M4 | 2-3h |
 | 20 | Demo script rehearsal (3x minimum) | — | 1-2h |
 | 21 | Polish TUI visuals, error messages, edge cases | — | 1-2h |
 
@@ -51,5 +51,5 @@
 - Journal export (CSV/JSON)
 - Historical funding rate charts (ASCII sparklines)
 - Order book depth visualization
-- Multi-exchange unified position view
+- Advanced position analytics
 - npm publish + GitHub Releases with prebuilt binaries

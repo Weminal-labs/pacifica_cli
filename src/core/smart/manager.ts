@@ -9,7 +9,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from "
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { SmartOrder, SmartOrderState, TrailingStopConfig } from "./types.js";
+import type { SmartOrder, SmartOrderState, TrailingStopConfig, PartialTpConfig } from "./types.js";
 import type { PacificaClient } from "../sdk/client.js";
 import type { Market, Position } from "../sdk/types.js";
 
@@ -111,6 +111,28 @@ export class SmartOrderManager {
       distancePercent: config.distancePercent,
       extremePrice: 0, // Will be set on first poll
       triggerPrice: 0,
+    };
+
+    this.orders.push(order);
+    this.save();
+    return order;
+  }
+
+  /** Add a partial take-profit smart order. */
+  addPartialTp(config: PartialTpConfig): SmartOrder {
+    const now = new Date().toISOString();
+    const order: SmartOrder = {
+      id: randomUUID(),
+      type: "partial_tp",
+      status: "active",
+      symbol: config.symbol.toUpperCase(),
+      positionSide: config.positionSide,
+      createdAt: now,
+      updatedAt: now,
+      distancePercent: 0,
+      extremePrice: 0,
+      triggerPrice: 0,
+      levels: config.levels.map((l) => ({ ...l, triggered: false })),
     };
 
     this.orders.push(order);
@@ -234,6 +256,10 @@ export class SmartOrderManager {
       return this.processTrailingStop(order, markPrice);
     }
 
+    if (order.type === "partial_tp") {
+      return this.processPartialTp(order, position, markPrice);
+    }
+
     return "ok";
   }
 
@@ -277,6 +303,66 @@ export class SmartOrderManager {
       if (markPrice >= order.triggerPrice) {
         return this.triggerClose(order);
       }
+    }
+
+    return "ok";
+  }
+
+  /** Process partial take-profit logic. */
+  private async processPartialTp(
+    order: SmartOrder,
+    position: Position,
+    markPrice: number,
+  ): Promise<"ok" | "triggered"> {
+    if (!order.levels) return "ok";
+
+    const now = new Date().toISOString();
+    let anyTriggered = false;
+
+    for (const level of order.levels) {
+      if (level.triggered) continue;
+
+      const shouldTrigger =
+        order.positionSide === "long"
+          ? markPrice >= level.price
+          : markPrice <= level.price;
+
+      if (!shouldTrigger) continue;
+
+      // Calculate close amount
+      const closeAmount = position.amount * (level.percent / 100);
+      if (closeAmount <= 0) continue;
+
+      try {
+        const closeSide = order.positionSide === "long" ? "ask" : "bid";
+        await this.client.placeMarketOrder({
+          symbol: order.symbol,
+          amount: String(closeAmount),
+          side: closeSide,
+          slippage_percent: "1",
+          reduce_only: true,
+        });
+
+        level.triggered = true;
+        anyTriggered = true;
+        order.updatedAt = now;
+      } catch {
+        // Skip this level on error, try again next poll
+      }
+    }
+
+    // Check if all levels are triggered
+    const allTriggered = order.levels.every((l) => l.triggered);
+    if (allTriggered) {
+      order.status = "triggered";
+      order.triggeredAt = now;
+      order.updatedAt = now;
+      this.save();
+      return "triggered";
+    }
+
+    if (anyTriggered) {
+      this.save();
     }
 
     return "ok";

@@ -52,8 +52,6 @@
 |---------|-------------|-------------|
 | Pacifica REST | `https://test-api.pacifica.fi/api/v1` | `https://api.pacifica.fi/api/v1` |
 | Pacifica WebSocket | `wss://test-ws.pacifica.fi/ws` | `wss://ws.pacifica.fi/ws` |
-| Binance Public | `https://fapi.binance.com` | Same (public) |
-| Bybit Public | `https://api.bybit.com` | Same (public) |
 
 ## Authentication
 
