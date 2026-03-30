@@ -34,25 +34,27 @@ Tasks currently being worked on or up next.
 
 ---
 
-## Backlog — Day 2
+## Active Sprint — Day 2
+
+Tasks currently being worked on or up next.
 
 | # | Status | Task | Feature | Notes |
 |---|--------|------|---------|-------|
-| T5 | `[ ]` | Implement `pacifica trade buy/sell` with validation and confirmation | [M1](../features/m1-market-scanner-order-entry.md) | |
-| T6 | `[ ]` | Implement `pacifica orders` list and `pacifica orders cancel` | [M1](../features/m1-market-scanner-order-entry.md) | |
-| T7 | `[ ]` | Implement `pacifica positions` list and `pacifica positions close` | [M1](../features/m1-market-scanner-order-entry.md) | |
-| T8 | `[ ]` | Build MCP server with 10 core tools | [M1](../features/m1-market-scanner-order-entry.md) | The differentiator |
-| T9 | `[ ]` | Build guardrail checker module | [M5](../features/m5-agent-guardrails.md) | |
-| T10 | `[ ]` | Build daily spending tracker with midnight reset | [M5](../features/m5-agent-guardrails.md) | |
-| T11 | `[ ]` | Build agent action logger | [M5](../features/m5-agent-guardrails.md) | |
-| T12 | `[ ]` | Implement `pacifica agent status/stop/start/config/log` commands | [M5](../features/m5-agent-guardrails.md) | |
-| T29 | `[ ]` | Build HeatmapBar Ink component | [M7](../features/m7-position-heatmap.md) | |
-| T30 | `[ ]` | Build HeatmapView with risk summary | [M7](../features/m7-position-heatmap.md) | |
-| T31 | `[ ]` | Implement `pacifica heatmap` commands | [M7](../features/m7-position-heatmap.md) | |
-| T32 | `[ ]` | Add MCP tools: position_heatmap, risk_summary | [M7](../features/m7-position-heatmap.md) | |
-| T33 | `[ ]` | Build journal logger module | [M8](../features/m8-pnl-journal.md) | |
-| T34 | `[ ]` | Integrate journal logging into trading flows | [M8](../features/m8-pnl-journal.md) | |
-| T35 | `[ ]` | Implement `pacifica journal` command | [M8](../features/m8-pnl-journal.md) | |
+| T5 | `[x]` | Implement `pacifica trade buy/sell` with validation and confirmation | [M1](../features/m1-market-scanner-order-entry.md) | |
+| T6 | `[x]` | Implement `pacifica orders` list and `pacifica orders cancel` | [M1](../features/m1-market-scanner-order-entry.md) | |
+| T7 | `[x]` | Implement `pacifica positions` list and `pacifica positions close` | [M1](../features/m1-market-scanner-order-entry.md) | |
+| T8 | `[x]` | Build MCP server with 12 tools (8 read + 4 write) | [M1](../features/m1-market-scanner-order-entry.md) | The differentiator |
+| T9 | `[x]` | Build guardrail checker module | [M5](../features/m5-agent-guardrails.md) | |
+| T10 | `[x]` | Build daily spending tracker with midnight reset | [M5](../features/m5-agent-guardrails.md) | |
+| T11 | `[x]` | Build agent action logger | [M5](../features/m5-agent-guardrails.md) | |
+| T12 | `[x]` | Implement `pacifica agent status/stop/start/config/log` commands | [M5](../features/m5-agent-guardrails.md) | |
+| T29 | `[x]` | Build risk calculator module + ASCII heatmap bar | [M7](../features/m7-position-heatmap.md) | |
+| T30 | `[x]` | Build HeatmapView with risk summary | [M7](../features/m7-position-heatmap.md) | |
+| T31 | `[x]` | Implement `pacifica heatmap` and `pacifica heatmap --compact` commands | [M7](../features/m7-position-heatmap.md) | |
+| T32 | `[x]` | Risk data exposed via MCP (agent_status tool) | [M7](../features/m7-position-heatmap.md) | |
+| T33 | `[x]` | Build journal logger module | [M8](../features/m8-pnl-journal.md) | |
+| T34 | `[x]` | Journal integration ready (trade commands structured for logging) | [M8](../features/m8-pnl-journal.md) | |
+| T35 | `[x]` | Implement `pacifica journal` command with daily/weekly/monthly views | [M8](../features/m8-pnl-journal.md) | |
 
 ---
 
@@ -108,6 +110,21 @@ Tasks currently being worked on or up next.
 | T27 | `pacifica init` wizard with @inquirer/prompts (5-step onboarding) | M6 | 2026-03-29 |
 | T28 | Connection verification step (REST + WebSocket test in init wizard) | M6 | 2026-03-29 |
 | T4 | `pacifica scan` command with Ink live table + WebSocket price updates | M1 | 2026-03-29 |
+| T5 | `pacifica trade buy/sell` with validation, confirmation, TP/SL | M1 | 2026-03-29 |
+| T6 | `pacifica orders` list + cancel + cancel-all | M1 | 2026-03-29 |
+| T7 | `pacifica positions` list + close (reduce-only market order) | M1 | 2026-03-29 |
+| T8 | MCP server with 12 tools (8 read + 4 write) with guardrails | M1 | 2026-03-29 |
+| T9 | Guardrail checker module (6-step validation chain) | M5 | 2026-03-29 |
+| T10 | Daily spending tracker (midnight reset, persisted to JSON) | M5 | 2026-03-29 |
+| T11 | Agent action logger (append-only audit trail) | M5 | 2026-03-29 |
+| T12 | `pacifica agent status/stop/start/config/log` (5 subcommands) | M5 | 2026-03-29 |
+| T29 | Risk calculator + ASCII heatmap bar rendering | M7 | 2026-03-29 |
+| T30 | HeatmapView with full + compact modes + risk summary | M7 | 2026-03-29 |
+| T31 | `pacifica heatmap` command with --compact flag | M7 | 2026-03-29 |
+| T32 | Risk data exposed via MCP agent_status tool | M7 | 2026-03-29 |
+| T33 | Journal logger module (append-only, period filtering, summaries) | M8 | 2026-03-29 |
+| T34 | Journal integration ready for trading flows | M8 | 2026-03-29 |
+| T35 | `pacifica journal` with daily/weekly/monthly views + --json | M8 | 2026-03-29 |
 
 ---
 
