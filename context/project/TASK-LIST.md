@@ -24,13 +24,13 @@ Tasks currently being worked on or up next.
 
 | # | Status | Task | Feature | Notes |
 |---|--------|------|---------|-------|
-| T1 | `[ ]` | Project scaffolding: pnpm init, tsconfig, tsup, commander, package.json bin | [M6](../features/m6-interactive-onboarding.md) | Foundation for everything |
-| T26 | `[ ]` | Build config loader/writer (.pacifica.yaml with validation) | [M6](../features/m6-interactive-onboarding.md) | Needed by init and all commands |
-| T2 | `[ ]` | Build Pacifica REST SDK client (auth, markets, orders, positions, account) | [M1](../features/m1-market-scanner-order-entry.md) | Core dependency |
-| T3 | `[ ]` | Build Pacifica WebSocket client with auto-reconnection | [M1](../features/m1-market-scanner-order-entry.md) | Needed for live scan |
-| T27 | `[ ]` | Implement `pacifica init` wizard with @inquirer/prompts | [M6](../features/m6-interactive-onboarding.md) | First thing judges see |
-| T28 | `[ ]` | Implement connection verification step (REST + WebSocket test) | [M6](../features/m6-interactive-onboarding.md) | End of init wizard |
-| T4 | `[ ]` | Implement `pacifica scan` command with Ink live table | [M1](../features/m1-market-scanner-order-entry.md) | First visual wow |
+| T1 | `[x]` | Project scaffolding: pnpm init, tsconfig, tsup, commander, package.json bin | [M6](../features/m6-interactive-onboarding.md) | Foundation for everything |
+| T26 | `[x]` | Build config loader/writer (.pacifica.yaml with validation) | [M6](../features/m6-interactive-onboarding.md) | Needed by init and all commands |
+| T2 | `[x]` | Build Pacifica REST SDK client (auth, markets, orders, positions, account) | [M1](../features/m1-market-scanner-order-entry.md) | Core dependency |
+| T3 | `[x]` | Build Pacifica WebSocket client with auto-reconnection | [M1](../features/m1-market-scanner-order-entry.md) | Needed for live scan |
+| T27 | `[x]` | Implement `pacifica init` wizard with @inquirer/prompts | [M6](../features/m6-interactive-onboarding.md) | First thing judges see |
+| T28 | `[x]` | Implement connection verification step (REST + WebSocket test) | [M6](../features/m6-interactive-onboarding.md) | End of init wizard |
+| T4 | `[x]` | Implement `pacifica scan` command with Ink live table | [M1](../features/m1-market-scanner-order-entry.md) | First visual wow |
 
 ---
 
@@ -101,7 +101,13 @@ Tasks currently being worked on or up next.
 
 | # | Task | Feature | Completed |
 |---|------|---------|-----------|
-| — | — | — | — |
+| T1 | Project scaffolding: pnpm, tsconfig, tsup, commander, package.json bin | M6 | 2026-03-29 |
+| T26 | Config loader/writer (.pacifica.yaml with zod validation) | M6 | 2026-03-29 |
+| T2 | Pacifica REST SDK client (Ed25519 signing, rate limiter, TTL cache, retry) | M1 | 2026-03-29 |
+| T3 | Pacifica WebSocket client (auto-reconnect, heartbeat, channel subscriptions) | M1 | 2026-03-29 |
+| T27 | `pacifica init` wizard with @inquirer/prompts (5-step onboarding) | M6 | 2026-03-29 |
+| T28 | Connection verification step (REST + WebSocket test in init wizard) | M6 | 2026-03-29 |
+| T4 | `pacifica scan` command with Ink live table + WebSocket price updates | M1 | 2026-03-29 |
 
 ---
 

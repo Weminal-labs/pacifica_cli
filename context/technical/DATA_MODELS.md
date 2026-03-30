@@ -7,12 +7,12 @@
 ```typescript
 interface PacificaConfig {
   network: 'testnet' | 'mainnet';
-  api_key: string;
-  api_secret: string;
+  private_key: string;     // Base58-encoded Ed25519 secret key (Solana wallet)
   defaults: {
     leverage: number;       // default: 5
     tp_distance: number;    // default: 3 (percent)
     sl_distance: number;    // default: 2 (percent)
+    slippage: number;       // default: 0.5 (percent)
   };
   agent: AgentConfig;
   hooks: HooksConfig;
@@ -41,31 +41,22 @@ interface HooksConfig {
 
 ## Market Data (from Pacifica API)
 
+> All numeric values come as strings from the API and are parsed to numbers in the SDK.
+
 ```typescript
 interface Market {
-  symbol: string;          // "ETH-PERP"
+  symbol: string;          // "BTC", "ETH", "SOL" (not "ETH-PERP")
   price: number;
-  change_1h: number;       // percent
   change_24h: number;      // percent
   volume_24h: number;      // USD
   open_interest: number;   // USD
   funding_rate: number;    // current period rate
-  next_funding_time: string; // ISO timestamp
-}
-
-interface Ticker {
-  symbol: string;
-  bid: number;
-  ask: number;
-  last: number;
-  timestamp: string;
 }
 
 interface OrderBook {
   symbol: string;
   bids: [number, number][];  // [price, size]
   asks: [number, number][];
-  timestamp: string;
 }
 ```
 
@@ -73,21 +64,16 @@ interface OrderBook {
 
 ```typescript
 interface Order {
-  id: string;
+  orderId: number;
   symbol: string;
-  side: 'buy' | 'sell';
+  side: 'bid' | 'ask';
   type: 'market' | 'limit';
-  price?: number;          // for limit orders
-  size: number;
-  leverage: number;
+  price?: number;            // for limit orders
+  initialAmount: number;     // original order size
+  filledAmount: number;      // how much has been filled
+  cancelledAmount: number;   // how much has been cancelled
   status: 'open' | 'filled' | 'partially_filled' | 'cancelled';
-  tp?: number;
-  sl?: number;
-  filled_price?: number;
-  filled_size?: number;
-  fees?: number;
   created_at: string;
-  updated_at: string;
 }
 
 interface Position {
@@ -95,21 +81,16 @@ interface Position {
   side: 'long' | 'short';
   size: number;
   entry_price: number;
-  mark_price: number;
   liquidation_price: number;
   leverage: number;
   margin: number;
-  unrealized_pnl: number;
-  unrealized_pnl_pct: number;
-  tp?: number;
-  sl?: number;
+  // mark_price and unrealized_pnl are calculated client-side, not returned by API
 }
 
 interface Account {
   balance: number;
   available_margin: number;
   used_margin: number;
-  total_unrealized_pnl: number;
 }
 ```
 
@@ -176,7 +157,7 @@ interface PartialTpConfig {
 ## Conventions
 
 - All timestamps are ISO 8601 strings
-- All prices and amounts are numbers (not strings)
+- All prices and amounts from API arrive as strings, parsed to numbers in the SDK
 - Currency amounts are in USD
 - Sizes are in the base asset unit (e.g., ETH, SOL, BTC)
 - Funding rates are per-period decimals (0.01 = 1%)
