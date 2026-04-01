@@ -15,7 +15,7 @@
 import { Command } from "commander";
 import { loadConfig } from "../../core/config/loader.js";
 import { PacificaClient } from "../../core/sdk/client.js";
-import { createSigner } from "../../core/sdk/signer.js";
+import { createSignerFromConfig } from "../../core/sdk/signer.js";
 import type { TradeHistory } from "../../core/sdk/types.js";
 import {
   theme,
@@ -64,7 +64,7 @@ async function showJournal(opts: JournalOpts): Promise<void> {
   try {
     const config = await loadConfig();
     const network = opts.testnet ? "testnet" as const : config.network;
-    const signer = createSigner(config.private_key);
+    const signer = createSignerFromConfig(config);
     client = new PacificaClient({ network, signer });
 
     const limit = opts.all ? 100 : parseInt(opts.limit, 10);

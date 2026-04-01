@@ -38,6 +38,23 @@ export interface SignerConfig {
  * seed || 32-byte public key).  If a 32-byte seed is provided instead, the
  * full 64-byte key pair is derived automatically.
  */
+/**
+ * Create a signer from config, automatically setting up agent wallet delegation
+ * when an `account` (main wallet public key) is provided.
+ */
+export function createSignerFromConfig(config: {
+  private_key: string;
+  account?: string;
+}): SignerConfig {
+  const signer = createSigner(config.private_key);
+  if (config.account && config.account !== signer.publicKey) {
+    // Agent wallet mode: sign with agent key, but use main account
+    signer.agentWallet = signer.publicKey; // agent's public key
+    signer.publicKey = config.account;     // main wallet's public key
+  }
+  return signer;
+}
+
 export function createSigner(secretKeyBase58: string): SignerConfig {
   let decoded: Uint8Array;
   try {

@@ -13,7 +13,7 @@ import { Command } from "commander";
 import { confirm } from "@inquirer/prompts";
 import { loadConfig } from "../../core/config/loader.js";
 import { PacificaClient } from "../../core/sdk/client.js";
-import { createSigner } from "../../core/sdk/signer.js";
+import { createSignerFromConfig } from "../../core/sdk/signer.js";
 import { theme, formatPrice, formatAmount, formatTimestamp } from "../theme.js";
 import type { Order } from "../../core/sdk/types.js";
 import { PacificaApiError } from "../../core/sdk/types.js";
@@ -65,7 +65,7 @@ export function createOrdersCommand(): Command {
 async function buildClient(globalOpts: GlobalOpts): Promise<{ client: PacificaClient; network: string }> {
   const config = await loadConfig();
   const network = globalOpts.testnet ? "testnet" : config.network;
-  const signer = createSigner(config.private_key);
+  const signer = createSignerFromConfig(config);
   const client = new PacificaClient({ network, signer });
   return { client, network };
 }

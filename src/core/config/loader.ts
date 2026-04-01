@@ -53,6 +53,7 @@ const agentConfigSchema = z.object({
 export const configSchema = z.object({
   network: z.enum(["testnet", "mainnet"]),
   private_key: z.string().min(1, "Private key is required"),
+  account: z.string().optional(),
   defaults: z
     .object({
       leverage: z
