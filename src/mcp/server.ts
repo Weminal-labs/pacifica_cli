@@ -298,7 +298,7 @@ function registerReadTools(
 function registerAnalyticsTools(
   server: McpServer,
   client: PacificaClient,
-  journalLogger: JournalLogger,
+  _journalLogger: JournalLogger,
   smartManager: SmartOrderManager,
 ): void {
   // -----------------------------------------------------------------------
@@ -306,12 +306,8 @@ function registerAnalyticsTools(
   // -----------------------------------------------------------------------
   server.tool(
     "pacifica_trade_journal",
-    "Get trade journal entries with optional filtering by period and symbol",
+    "Get trade history from the Pacifica API with optional filtering by symbol",
     {
-      period: z
-        .enum(["today", "week", "month", "all"])
-        .optional()
-        .describe("Time window (default: all)"),
       symbol: z
         .string()
         .optional()
@@ -321,18 +317,20 @@ function registerAnalyticsTools(
         .int()
         .positive()
         .optional()
-        .describe("Maximum number of entries to return (default: all)"),
+        .describe("Maximum number of entries to return (default: 50)"),
     },
-    async ({ period, symbol, limit }) => {
+    async ({ symbol, limit }) => {
       try {
-        const entries = await journalLogger.getEntries({ period, symbol, limit });
+        const entries = await client.getTradeHistory(
+          symbol?.toUpperCase(),
+          limit ?? 50,
+        );
         return ok({
           count: entries.length,
-          period: period ?? "all",
           entries,
         });
       } catch (err) {
-        return fail(`Error fetching trade journal: ${err instanceof Error ? err.message : String(err)}`);
+        return fail(`Error fetching trade history: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
   );
@@ -342,17 +340,43 @@ function registerAnalyticsTools(
   // -----------------------------------------------------------------------
   server.tool(
     "pacifica_pnl_summary",
-    "Get PnL summary statistics: win rate, total PnL, avg win/loss, best/worst trade",
+    "Get PnL summary statistics from trade history: total trades, total PnL, total fees, win rate",
     {
-      period: z
-        .enum(["today", "week", "month", "all"])
+      limit: z
+        .number()
+        .int()
+        .positive()
         .optional()
-        .describe("Time window (default: today)"),
+        .describe("Number of recent trades to analyze (default: 100)"),
     },
-    async ({ period }) => {
+    async ({ limit }) => {
       try {
-        const summary = await journalLogger.getSummary(period ?? "today");
-        return ok(summary);
+        const entries = await client.getTradeHistory(undefined, limit ?? 100);
+
+        let totalPnl = 0;
+        let totalFees = 0;
+        let wins = 0;
+        let losses = 0;
+
+        for (const e of entries) {
+          totalPnl += e.pnl;
+          totalFees += e.fee;
+          if (e.pnl > 0) wins++;
+          else if (e.pnl < 0) losses++;
+        }
+
+        const totalTrades = entries.length;
+        const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
+
+        return ok({
+          totalTrades,
+          wins,
+          losses,
+          winRate: Math.round(winRate * 10) / 10,
+          totalPnl: Math.round(totalPnl * 100) / 100,
+          totalFees: Math.round(totalFees * 100) / 100,
+          netPnl: Math.round((totalPnl - totalFees) * 100) / 100,
+        });
       } catch (err) {
         return fail(`Error fetching PnL summary: ${err instanceof Error ? err.message : String(err)}`);
       }
