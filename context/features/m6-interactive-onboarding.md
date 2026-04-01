@@ -34,8 +34,12 @@ First-run experience. 5-step wizard that takes a user from zero to live data in 
 - If `--testnet` flag: skip this step, default to testnet
 - Otherwise: prompt "Which network?" → Testnet (recommended) / Mainnet
 
-**Step 2/5: API Credentials**
-- Prompt for API key and secret
+**Prerequisite: Activate wallet on Pacifica web app**
+- User must first connect their wallet and enter access code `Pacifica` at [test-app.pacifica.fi](https://test-app.pacifica.fi) (testnet) or [app.pacifica.fi](https://app.pacifica.fi) (mainnet)
+- Without activation, all trading API calls fail with `"Beta access required"`
+
+**Step 2/5: Wallet Private Key**
+- Prompt for Base58-encoded Ed25519 private key (same wallet activated on web app)
 - Test connection immediately
 - If invalid: allow retry, don't exit
 - Show: "Connected! Account: 0x... Balance: $10,000 (testnet)"

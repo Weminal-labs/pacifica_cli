@@ -77,7 +77,20 @@ All stored in `.pacifica/` directory (created automatically):
 
 ## Setup Instructions
 
+### Prerequisites — Activate wallet on Pacifica web app
+
+Before using the CLI, you must activate your wallet on the Pacifica web app:
+
+1. Go to [test-app.pacifica.fi](https://test-app.pacifica.fi) (testnet) or [app.pacifica.fi](https://app.pacifica.fi) (mainnet)
+2. Connect your Solana wallet (e.g. Phantom)
+3. Enter access code **`Pacifica`** when prompted
+4. Use the [Faucet](https://test-app.pacifica.fi/faucet) to mint test USDP (testnet only)
+
+Without this step, all trading API calls will fail with: `"Beta access required. Signer must redeem a valid beta code."`
+
+### CLI setup
+
 1. Run `pacifica init --testnet`
-2. Enter Base58-encoded Ed25519 private key (Solana wallet secret key)
+2. Enter Base58-encoded Ed25519 private key (same wallet activated above)
 3. Set trading defaults and agent guardrails
 4. Wizard verifies connection automatically

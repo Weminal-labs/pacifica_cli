@@ -394,13 +394,13 @@ export class PacificaClient {
       params.limit = String(limit);
     }
 
-    const resp = await this.get<ApiResponse<TradeHistory[]>>(
+    const resp = await this.get<ApiResponse<RawTradeHistory[]>>(
       "/api/v1/trades/history",
       params,
       CACHE_TTL_ACCOUNT,
     );
 
-    return resp.data ?? [];
+    return (resp.data ?? []).map(parseRawTradeHistory);
   }
 
   // -------------------------------------------------------------------------
@@ -845,6 +845,23 @@ interface RawFundingRate {
   created_at: string;
 }
 
+/** Raw trade history from GET /api/v1/trades/history (authenticated) */
+interface RawTradeHistory {
+  history_id: number;
+  order_id: number;
+  client_order_id?: string | null;
+  symbol: string;
+  amount: string;
+  price: string;
+  entry_price: string;
+  fee: string;
+  pnl: string;
+  event_type: string;
+  side: string;
+  cause: string;
+  created_at: number;
+}
+
 /** Raw public trade from GET /api/v1/trades */
 interface RawPublicTrade {
   event_type: string;
@@ -903,6 +920,24 @@ function parseRawPublicTrade(raw: RawPublicTrade, symbol: string): TradeHistory 
     side: raw.side,
     cause: raw.cause,
     createdAt: raw.created_at,
+  };
+}
+
+function parseRawTradeHistory(raw: RawTradeHistory): TradeHistory {
+  return {
+    historyId: String(raw.history_id),
+    orderId: raw.order_id,
+    clientOrderId: raw.client_order_id ?? undefined,
+    symbol: raw.symbol,
+    amount: safeFloat(raw.amount),
+    price: safeFloat(raw.price),
+    entryPrice: safeFloat(raw.entry_price),
+    fee: safeFloat(raw.fee),
+    pnl: safeFloat(raw.pnl),
+    eventType: raw.event_type,
+    side: raw.side,
+    cause: raw.cause,
+    createdAt: new Date(raw.created_at).toISOString(),
   };
 }
 
