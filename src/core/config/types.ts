@@ -19,6 +19,7 @@ export interface AgentConfig {
 export interface PacificaConfig {
   network: "testnet" | "mainnet";
   private_key: string;   // Base58-encoded Ed25519 secret key (64 bytes)
+  account?: string;       // Main wallet public key (required when using agent keys)
   defaults: {
     leverage: number;       // default: 5
     slippage: number;       // default: 1 (percent)

@@ -13,7 +13,7 @@ import { Command } from "commander";
 import { confirm } from "@inquirer/prompts";
 import { loadConfig } from "../../core/config/loader.js";
 import { PacificaClient } from "../../core/sdk/client.js";
-import { createSigner } from "../../core/sdk/signer.js";
+import { createSignerFromConfig } from "../../core/sdk/signer.js";
 import type {
   MarketOrderRequest,
   LimitOrderRequest,
@@ -90,7 +90,7 @@ async function executeTrade(
   try {
     // -- 1. Load config & build client --------------------------------------
     const config = await loadConfig();
-    const signer = createSigner(config.private_key);
+    const signer = createSignerFromConfig(config);
     client = new PacificaClient({ network: config.network, signer });
 
     // -- 2. Validate inputs -------------------------------------------------

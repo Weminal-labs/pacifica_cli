@@ -7,7 +7,7 @@
 import { Command } from "commander";
 import { loadConfig } from "../../core/config/loader.js";
 import { PacificaClient } from "../../core/sdk/client.js";
-import { createSigner } from "../../core/sdk/signer.js";
+import { createSignerFromConfig } from "../../core/sdk/signer.js";
 import { theme, formatFundingRate } from "../theme.js";
 
 // ---------------------------------------------------------------------------
@@ -56,7 +56,7 @@ export function createFundingCommand(): Command {
 
       try {
         const config = await loadConfig();
-        const signer = createSigner(config.private_key);
+        const signer = createSignerFromConfig(config);
         client = new PacificaClient({ network: config.network, signer });
 
         const markets = await client.getMarkets();

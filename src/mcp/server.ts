@@ -21,7 +21,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod/v4";
 
 import { PacificaClient } from "../core/sdk/client.js";
-import { createSigner } from "../core/sdk/signer.js";
+import { createSignerFromConfig } from "../core/sdk/signer.js";
 import type { Market, OrderSide, TpSlConfig } from "../core/sdk/types.js";
 import { loadConfig } from "../core/config/loader.js";
 import type { PacificaConfig } from "../core/config/types.js";
@@ -1351,7 +1351,7 @@ async function main(): Promise<void> {
   // 1. Load configuration and initialize core components
   // -----------------------------------------------------------------------
   const config = await loadConfig();
-  const signer = createSigner(config.private_key);
+  const signer = createSignerFromConfig(config);
   const client = new PacificaClient({ network: config.network, signer });
 
   // -----------------------------------------------------------------------

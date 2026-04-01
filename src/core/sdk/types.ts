@@ -326,7 +326,8 @@ export function safeFloat(val: unknown, fallback = 0): number {
 export function parseMarket(info: MarketInfo, price: MarketPrice): Market {
   const mid = safeFloat(price.mid);
   const yesterday = safeFloat(price.yesterday_price);
-  const change24h = yesterday !== 0
+  // API returns -1 for markets without yesterday data — treat as unavailable
+  const change24h = yesterday > 0
     ? ((mid - yesterday) / yesterday) * 100
     : 0;
 

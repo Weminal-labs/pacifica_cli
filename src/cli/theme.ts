@@ -79,8 +79,12 @@ export function formatPnl(n: number): string {
  */
 export function formatPercent(n: number): string {
   const sign = n >= 0 ? "+" : "-";
-  const abs = Math.abs(n).toFixed(2);
-  const text = `${sign}${abs}%`;
+  const abs = Math.abs(n);
+  // Clamp display to avoid blowing out column width
+  const formatted = abs >= 1000
+    ? abs.toFixed(0)
+    : abs.toFixed(2);
+  const text = `${sign}${formatted}%`;
   return n >= 0 ? theme.profit(text) : theme.loss(text);
 }
 
@@ -120,7 +124,9 @@ export function formatVolume(n: number): string {
  * Example: 0.0120%
  */
 export function formatFundingRate(n: number): string {
-  return n.toFixed(4) + "%";
+  // API returns raw decimal (e.g. 0.000015 = 0.0015%), multiply by 100 for display
+  const pct = n * 100;
+  return pct.toFixed(4) + "%";
 }
 
 // ---------------------------------------------------------------------------
