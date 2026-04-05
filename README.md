@@ -14,6 +14,12 @@
 
 </div>
 
+<div align="center">
+
+![Architecture](docs/architecture.jpg)
+
+</div>
+
 ---
 
 ## What is Pacifica CLI?
