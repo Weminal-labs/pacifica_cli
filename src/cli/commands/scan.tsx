@@ -16,7 +16,8 @@ import type { SignerConfig } from "../../core/sdk/signer.js";
 import { safeFloat } from "../../core/sdk/types.js";
 import type { Market, WsPriceUpdate } from "../../core/sdk/types.js";
 import { MarketTable } from "../components/MarketTable.js";
-import { formatVolume, formatFundingRate } from "../theme.js";
+import { formatVolume, formatFundingRate, theme } from "../theme.js";
+import { liquidityFilter } from "../../core/intelligence/filter.js";
 
 // ---------------------------------------------------------------------------
 // Colors (matching DexScreener CLI palette)
@@ -52,7 +53,13 @@ const ARROW_DOWN = "\u25bc"; // ▼
 // Public API
 // ---------------------------------------------------------------------------
 
-export async function scanCommand(options: { testnet?: boolean; json?: boolean }): Promise<void> {
+export async function scanCommand(options: {
+  testnet?: boolean;
+  json?: boolean;
+  gainers?: boolean;
+  losers?: boolean;
+  minVolume?: number;
+}): Promise<void> {
   const { client, ws, network } = await buildClients(options);
 
   let markets: Market[];
@@ -66,15 +73,36 @@ export async function scanCommand(options: { testnet?: boolean; json?: boolean }
     return;
   }
 
-  if (options.json) {
-    console.log(JSON.stringify(markets, null, 2));
+  // Apply filters and sorting before rendering
+  let displayMarkets = markets;
+
+  if (options.minVolume && options.minVolume > 0) {
+    displayMarkets = liquidityFilter(displayMarkets, options.minVolume);
+  }
+
+  if (options.gainers) {
+    displayMarkets = [...displayMarkets].sort((a, b) => b.change24h - a.change24h);
+  } else if (options.losers) {
+    displayMarkets = [...displayMarkets].sort((a, b) => a.change24h - b.change24h);
+  }
+
+  if (displayMarkets.length === 0) {
+    console.log(theme.muted("No markets match the current filter."));
     client.destroy();
+    ws.disconnect();
+    return;
+  }
+
+  if (options.json) {
+    console.log(JSON.stringify(displayMarkets, null, 2));
+    client.destroy();
+    ws.disconnect();
     return;
   }
 
   const { unmount, waitUntilExit } = render(
     <ScanApp
-      initialMarkets={markets}
+      initialMarkets={displayMarkets}
       client={client}
       ws={ws}
       network={network}

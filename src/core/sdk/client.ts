@@ -906,6 +906,14 @@ function parseRawFundingRate(raw: RawFundingRate): FundingRate {
   };
 }
 
+/** Normalise raw side strings to the canonical "bid" | "ask" values. */
+function normaliseSide(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (lower === "bid" || lower === "buy" || lower === "long") return "bid";
+  if (lower === "ask" || lower === "sell" || lower === "short") return "ask";
+  return raw; // preserve unknown values so callers can log/debug
+}
+
 function parseRawPublicTrade(raw: RawPublicTrade, symbol: string): TradeHistory {
   return {
     historyId: "",
@@ -917,7 +925,7 @@ function parseRawPublicTrade(raw: RawPublicTrade, symbol: string): TradeHistory 
     fee: 0,
     pnl: 0,
     eventType: raw.event_type,
-    side: raw.side,
+    side: normaliseSide(raw.side),
     cause: raw.cause,
     createdAt: raw.created_at,
   };
@@ -935,7 +943,7 @@ function parseRawTradeHistory(raw: RawTradeHistory): TradeHistory {
     fee: safeFloat(raw.fee),
     pnl: safeFloat(raw.pnl),
     eventType: raw.event_type,
-    side: raw.side,
+    side: normaliseSide(raw.side),
     cause: raw.cause,
     createdAt: new Date(raw.created_at).toISOString(),
   };

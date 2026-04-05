@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-0.1.0-blue?style=flat-square)](package.json)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square&logo=node.js)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-orange?style=flat-square)](LICENSE)
-[![MCP](https://img.shields.io/badge/MCP-23_tools-purple?style=flat-square)](src/mcp/server.ts)
+[![MCP](https://img.shields.io/badge/MCP-28_tools-purple?style=flat-square)](src/mcp/server.ts)
 [![Network](https://img.shields.io/badge/network-Solana-9945FF?style=flat-square&logo=solana)](https://solana.com)
 
 *One codebase. Three interfaces. Full agent control.*
@@ -47,7 +47,7 @@ A terminal-first trading suite for the Pacifica perpetuals DEX — built for tra
 | Interface | Command | Purpose |
 |-----------|---------|---------|
 | **CLI / TUI** | `pacifica <cmd>` | Rich terminal UI — live markets, orders, positions, PnL |
-| **MCP Server** | `pacifica-mcp` | 23 tools for AI agents (Claude, Cursor, any MCP client) |
+| **MCP Server** | `pacifica-mcp` | 28 tools for AI agents (Claude, Cursor, any MCP client) |
 | **Claude Skills** | `/scan`, `/trade`, `/journal` | Slash commands for agent-assisted workflows |
 
 ---
@@ -139,6 +139,25 @@ pacifica agent log                     # full audit trail
 pacifica agent stop / start            # disable / enable agent trading
 ```
 
+### Alerts
+
+```bash
+pacifica alerts add --symbol BTC --above 100000
+pacifica alerts add --symbol ETH --funding-above 0.001 --note "funding squeeze"
+pacifica alerts check
+pacifica alerts list
+pacifica alerts remove <id>
+```
+
+### Scan with Filters
+
+```bash
+pacifica scan --gainers                          # sort by 24h gain
+pacifica scan --losers                           # sort by 24h loss
+pacifica scan --gainers --min-volume 5000000     # gainers with >$5M volume
+pacifica scan --json | jq '.[0]'                 # pipe-friendly JSON output
+```
+
 ---
 
 ## AI Agent Integration (MCP)
@@ -193,6 +212,16 @@ Add to your Claude Desktop or Cursor config to give Claude full trading access w
 </tr>
 </table>
 
+#### Intelligence Tools (5 — agent-readable data)
+
+| Tool | Purpose |
+|------|---------|
+| `pacifica_top_markets` | Ranked markets by gainers/losers/volume/OI/funding with optional liquidity gate |
+| `pacifica_liquidity_scan` | Order book depth, spread%, slippage estimates at $10k/$50k/$100k |
+| `pacifica_trade_patterns` | Buy pressure, VWAP, whale order detection, momentum signal |
+| `pacifica_alert_triage` | Prioritized alert list: triggered first, near-trigger second |
+| `pacifica_market_snapshot` | Full market intelligence snapshot (schemaVersion: "1.0") |
+
 > **All write tools pass through the guardrail system** — order size limits, leverage caps, daily spending budget, and action whitelist are enforced on every agent call.
 
 ---
@@ -242,7 +271,7 @@ agent:
          ┌─────────▼──────┐   ┌────────▼────────┐
          │   CLI (TUI)    │   │   MCP Server    │
          │  Commander.js  │   │  stdio / tools  │
-         │  Ink (React)   │   │   23 tools      │
+         │  Ink (React)   │   │   28 tools      │
          └─────────┬──────┘   └────────┬────────┘
                    │                   │
          ┌─────────▼───────────────────▼──────┐
@@ -292,7 +321,7 @@ All data is stored locally — no external database required:
 | Track | Tech |
 |-------|------|
 | Pacifica DEX | Perpetuals trading, Ed25519 signing, WebSocket feeds |
-| Claude MCP | 23 tools with full guardrail enforcement |
+| Claude MCP | 28 tools with full guardrail enforcement |
 | Solana | Keypair auth, base58 encoding |
 | Terminal UI | Ink (React-in-terminal), Commander.js |
 

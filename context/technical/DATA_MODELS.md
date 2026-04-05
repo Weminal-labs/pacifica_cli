@@ -154,6 +154,94 @@ interface PartialTpConfig {
 }
 ```
 
+## Intelligence Layer (`src/core/intelligence/schema.ts`)
+
+```typescript
+// --- Market Intelligence Schema (v1) ---
+
+interface MarketSummary {
+  symbol: string;
+  price: number;
+  change24h: number;
+  volume24h: number;
+  openInterest: number;
+  fundingRate: number;
+  score: number;           // composite sort score
+  rank: number;
+}
+
+interface LiquidityScan {
+  symbol: string;
+  volume24h: number;
+  spreadPct: number;       // (best_ask - best_bid) / mid * 100
+  depth: {
+    bids_10pct: number;    // total bid liquidity within 10% of mid
+    asks_10pct: number;
+  };
+  slippage: {
+    usd_10k: number;       // estimated slippage % for $10k market order
+    usd_50k: number;
+    usd_100k: number;
+  };
+  liquidityScore: number;  // 0-100
+}
+
+interface TradePatternResult {
+  symbol: string;
+  period: string;          // "last N trades"
+  buyPressure: number;     // 0-1 ratio (buy volume / total volume)
+  vwap: number;
+  currentPrice: number;
+  priceVsVwap: number;     // % above/below VWAP
+  largeOrders: LargeOrder[];
+  momentumSignal: "bullish" | "bearish" | "neutral";
+  momentum: number;        // -1 to 1
+}
+
+interface LargeOrder {
+  price: number;
+  size: number;
+  sizeUsd: number;
+  side: "buy" | "sell";
+  timestamp: string;
+}
+
+// --- Alert System ---
+
+type AlertType = "price_above" | "price_below" | "funding_above" | "funding_below" | "volume_spike";
+type AlertStatus = "active" | "triggered" | "dismissed";
+
+interface Alert {
+  id: string;
+  symbol: string;
+  type: AlertType;
+  threshold: number;
+  status: AlertStatus;
+  createdAt: string;
+  triggeredAt?: string;
+  note?: string;
+}
+
+interface AlertTriageResult {
+  alert: Alert;
+  currentValue: number;
+  distancePct: number;      // % from threshold (negative = triggered)
+  urgency: "triggered" | "near" | "dormant";
+}
+
+interface MarketIntelligenceSnapshot {
+  schemaVersion: "1.0";
+  generatedAt: string;      // ISO 8601
+  markets: MarketSummary[];
+  topGainers: MarketSummary[];
+  topLosers: MarketSummary[];
+  highestFunding: MarketSummary[];
+  liquidityLeaders: LiquidityScan[];
+  triggeredAlerts: AlertTriageResult[];
+  nearAlerts: AlertTriageResult[];
+}
+```
+
 ## Conventions
 
 - All timestamps are ISO 8601 strings

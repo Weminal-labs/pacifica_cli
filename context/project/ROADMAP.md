@@ -53,3 +53,13 @@
 - Order book depth visualization
 - Advanced position analytics
 - npm publish + GitHub Releases with prebuilt binaries
+
+## M10 — Agent-Readable Market Intelligence (Post-Hackathon P1)
+
+| Task | Description |
+|------|-------------|
+| Intelligence core | filter.ts, patterns.ts, alerts.ts, schema.ts |
+| 5 new MCP tools | top_markets, liquidity_scan, trade_patterns, alert_triage, market_snapshot |
+| CLI: alerts command | pacifica alerts list/add/remove/check |
+| CLI: scan enhancements | --gainers, --losers, --min-volume, --json |
+| Agent recipes | Documented tool chains for common analysis |
