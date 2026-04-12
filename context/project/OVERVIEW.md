@@ -7,7 +7,7 @@
 Pacifica CLI is an agent-native trading terminal for Pacifica DEX. Three deliverables from one codebase:
 
 1. **CLI (TUI)** — Rich terminal UI with live market data, order management, position tracking, ASCII-art heatmaps. Installed via `npm install -g pacifica-cli`, runs as `pacifica <command>`.
-2. **MCP Server** — Model Context Protocol server exposing 23 tools (10 read + 5 analytics + 2 funding + 6 write) so AI agents (Claude, etc.) can read markets, place orders, manage positions, and access risk/journal data on Pacifica programmatically.
+2. **MCP Server** — Model Context Protocol server exposing 28 tools (10 read + 5 analytics + 2 funding + 5 intelligence + 6 write) so AI agents (Claude, etc.) can read markets, place orders, manage positions, and access risk/journal/intelligence data on Pacifica programmatically.
 3. **Claude Code Skills** — 5 slash commands (`/pacifica scan`, `/pacifica trade`, `/pacifica positions`, `/pacifica heatmap`, `/pacifica agent`) for agent-assisted trading workflows.
 
 ## The Problem

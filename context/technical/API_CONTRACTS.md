@@ -36,6 +36,16 @@ These are the tools the MCP server exposes. Each tool has a defined name, descri
 | `pacifica_risk_summary` | `{}` | `RiskSummary` — raw risk metrics JSON |
 | `pacifica_get_smart_orders` | `{ status?: string, symbol?: string }` | `SmartOrder[]` — active/all smart orders |
 
+### Intelligence Tools (5 — no guardrails needed)
+
+| Tool | Input | Output |
+|------|-------|--------|
+| `pacifica_top_markets` | `{ sort_by: "gainers"\|"losers"\|"volume"\|"oi"\|"funding", limit?: number, min_volume_usd?: number }` | `MarketSummary[]` ranked with score |
+| `pacifica_liquidity_scan` | `{ symbols?: string[], min_volume_usd?: number }` | `LiquidityScan[]` with spread%, slippage estimates |
+| `pacifica_trade_patterns` | `{ symbol: string, limit?: number }` | `TradePatternResult` with buy pressure, VWAP, whale orders, momentum |
+| `pacifica_alert_triage` | `{ include_dormant?: boolean }` | `AlertTriageResult[]` sorted by urgency |
+| `pacifica_market_snapshot` | `{ symbols?: string[] }` | `MarketIntelligenceSnapshot` — composite stable JSON |
+
 ### Write Tools (6 — guardrails enforced)
 
 | Tool | Input | Output | Guardrail Checks |
@@ -48,6 +58,19 @@ These are the tools the MCP server exposes. Each tool has a defined name, descri
 | `pacifica_set_trailing_stop` | `{ symbol, distance_percent, position_side? }` | `SmartOrder` | enabled, action allowed |
 | `pacifica_set_partial_tp` | `{ symbol, levels: {price, percent}[], position_side? }` | `SmartOrder` | enabled, action allowed |
 | `pacifica_cancel_smart_order` | `{ smart_order_id }` | Confirmation | enabled, action allowed |
+
+## CLI Intelligence Commands
+
+| Command | Description |
+|---------|-------------|
+| `pacifica scan --gainers` | Sort markets by 24h change desc |
+| `pacifica scan --losers` | Sort markets by 24h change asc |
+| `pacifica scan --min-volume <usd>` | Filter by 24h volume |
+| `pacifica scan --json` | Output stable JSON array |
+| `pacifica alerts list` | List all configured alerts |
+| `pacifica alerts add` | Add a new price/funding/volume alert |
+| `pacifica alerts remove` | Remove an alert by ID |
+| `pacifica alerts check` | Check which alerts have triggered |
 
 ## Pacifica REST API
 

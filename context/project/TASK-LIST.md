@@ -74,6 +74,26 @@ Tasks currently being worked on or up next.
 
 ---
 
+## Sprint — M10 Intelligence
+
+| # | Status | Task | Feature |
+|---|--------|------|---------|
+| T44 | `[ ]` | Create `context/features/m10-agent-intelligence.md` | M10 |
+| T45 | `[ ]` | Update API_CONTRACTS.md, DATA_MODELS.md, ROADMAP.md, OVERVIEW.md, DECISIONS.md | M10 |
+| T46 | `[ ]` | Create `src/core/intelligence/schema.ts` — stable TypeScript interfaces | M10 |
+| T47 | `[ ]` | Create `src/core/intelligence/filter.ts` — market filter engine | M10 |
+| T48 | `[ ]` | Create `src/core/intelligence/patterns.ts` — trade pattern analyzer | M10 |
+| T49 | `[ ]` | Create `src/core/intelligence/alerts.ts` — alert manager + triage | M10 |
+| T50 | `[ ]` | Add `pacifica_top_markets` MCP tool to server.ts | M10 |
+| T51 | `[ ]` | Add `pacifica_liquidity_scan` MCP tool to server.ts | M10 |
+| T52 | `[ ]` | Add `pacifica_trade_patterns` MCP tool to server.ts | M10 |
+| T53 | `[ ]` | Add `pacifica_alert_triage` + `pacifica_market_snapshot` MCP tools | M10 |
+| T54 | `[ ]` | Create `src/cli/commands/alerts.ts` + register in index.ts | M10 |
+| T55 | `[ ]` | Update `src/cli/commands/scan.tsx` — add --gainers/--losers/--min-volume/--json | M10 |
+| T56 | `[ ]` | Create `.claude/commands/intelligence.md` agent recipe skill | M10 |
+
+---
+
 ## Deferred (P2 / Post-Hackathon)
 
 | # | Status | Task | Feature | Notes |

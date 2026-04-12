@@ -7,10 +7,12 @@
 // any MCP-compatible host (Claude Desktop, Cursor, etc.).
 //
 // Tools are split into categories:
-//   - Read tools      (10) -- market data, account info, agent introspection
-//   - Analytics tools  (5) -- journal, PnL, heatmap, risk, smart orders
-//   - Funding tools    (2) -- funding rates, funding history
-//   - Write tools      (6) -- orders, positions, smart orders
+//   - Read tools         (10) -- market data, account info, agent introspection
+//   - Analytics tools     (5) -- journal, PnL, heatmap, risk, smart orders
+//   - Funding tools       (2) -- funding rates, funding history
+//   - Intelligence tools  (5) -- top markets, liquidity scan, trade patterns, alerts, snapshot
+//   - Write tools         (6) -- orders, positions, smart orders
+// Total: 28 tools
 //
 // Every write tool passes through the GuardrailChecker before execution and
 // is recorded by the AgentActionLogger / SpendingTracker for auditability.
@@ -22,7 +24,7 @@ import { z } from "zod/v4";
 
 import { PacificaClient } from "../core/sdk/client.js";
 import { createSignerFromConfig } from "../core/sdk/signer.js";
-import type { Market, OrderSide, TpSlConfig } from "../core/sdk/types.js";
+import type { Market, OrderSide, TpSlConfig, FundingRate } from "../core/sdk/types.js";
 import { loadConfig } from "../core/config/loader.js";
 import type { PacificaConfig } from "../core/config/types.js";
 import { GuardrailChecker } from "../core/agent/guardrails.js";
@@ -31,6 +33,17 @@ import { AgentActionLogger } from "../core/agent/action-logger.js";
 import { JournalLogger } from "../core/journal/logger.js";
 import { calculateRiskSummary } from "../core/risk/calculator.js";
 import { SmartOrderManager } from "../core/smart/manager.js";
+import {
+  topGainers, topLosers, byOpenInterest, byFundingRate, byVolume,
+  liquidityFilter, computeLiquidityScan, toMarketSummary,
+  topGainersWithLiquidityFilter,
+} from "../core/intelligence/filter.js";
+import { analyzeTradePatterns } from "../core/intelligence/patterns.js";
+import { AlertManager } from "../core/intelligence/alerts.js";
+import { SCHEMA_VERSION } from "../core/intelligence/schema.js";
+import type {
+  MarketSummary, LiquidityScan, MarketIntelligenceSnapshot,
+} from "../core/intelligence/schema.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -543,6 +556,362 @@ function registerFundingTools(
         });
       } catch (err) {
         return fail(`Error fetching funding history for ${symbol}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Intelligence Tools (5) — agent-readable data, no guardrails
+// ---------------------------------------------------------------------------
+
+function registerIntelligenceTools(
+  server: McpServer,
+  client: PacificaClient,
+  alertManager: AlertManager,
+): void {
+  // -----------------------------------------------------------------------
+  // pacifica_top_markets
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_top_markets",
+    "Get a ranked list of Pacifica markets sorted by a chosen dimension (gainers, losers, volume, open interest, or funding rate) with an optional minimum-volume liquidity gate",
+    {
+      sort_by: z
+        .enum(["gainers", "losers", "volume", "oi", "funding"])
+        .default("gainers")
+        .describe("Ranking dimension: gainers (24h % change), losers, volume (24h USD), oi (open interest), funding (absolute funding rate)"),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(50)
+        .default(10)
+        .optional()
+        .describe("Number of results to return (1–50, default 10)"),
+      min_volume_usd: z
+        .number()
+        .min(0)
+        .default(0)
+        .optional()
+        .describe("Minimum 24h volume in USD; markets below this threshold are excluded (default 0 = no filter)"),
+    },
+    async ({ sort_by, limit, min_volume_usd }) => {
+      try {
+        let markets = await client.getMarkets();
+        const effectiveLimit = limit ?? 10;
+        const minVol = min_volume_usd ?? 0;
+
+        if (minVol > 0) {
+          markets = liquidityFilter(markets, minVol);
+        }
+
+        let results: MarketSummary[];
+        switch (sort_by) {
+          case "gainers":
+            results = topGainers(markets, effectiveLimit);
+            break;
+          case "losers":
+            results = topLosers(markets, effectiveLimit);
+            break;
+          case "volume":
+            results = byVolume(markets, effectiveLimit);
+            break;
+          case "oi":
+            results = byOpenInterest(markets, effectiveLimit);
+            break;
+          case "funding":
+            results = byFundingRate(markets, effectiveLimit);
+            break;
+          default:
+            results = topGainers(markets, effectiveLimit);
+        }
+
+        return ok({
+          sort_by,
+          limit: effectiveLimit,
+          min_volume_usd: minVol,
+          count: results.length,
+          results,
+        });
+      } catch (err) {
+        return fail(`Error fetching top markets: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_liquidity_scan
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_liquidity_scan",
+    "Analyse order-book depth for up to 10 markets: spread, bid/ask depth within 10% of mid price, slippage estimates for $10k/$50k/$100k orders, and a composite liquidity score",
+    {
+      symbols: z
+        .array(z.string())
+        .optional()
+        .describe("List of trading symbols to scan (e.g. [\"BTC\", \"ETH\"]). If omitted, the top 10 markets by 24h volume are scanned"),
+      min_volume_usd: z
+        .number()
+        .min(0)
+        .default(0)
+        .optional()
+        .describe("Minimum 24h volume filter applied before selecting markets (default 0 = no filter)"),
+    },
+    async ({ symbols, min_volume_usd }) => {
+      try {
+        let markets = await client.getMarkets();
+        const minVol = min_volume_usd ?? 0;
+
+        let selected;
+        if (symbols && symbols.length > 0) {
+          const upperSymbols = symbols.map((s) => s.toUpperCase());
+          selected = markets.filter((m) =>
+            upperSymbols.includes(m.symbol.toUpperCase()),
+          );
+        } else {
+          // Default: top 10 by volume
+          selected = [...markets]
+            .sort((a, b) => b.volume24h - a.volume24h)
+            .slice(0, 10);
+        }
+
+        if (minVol > 0) {
+          selected = liquidityFilter(selected, minVol);
+        }
+
+        // Cap at 10 to avoid rate limit issues
+        selected = selected.slice(0, 10);
+
+        const results: LiquidityScan[] = await Promise.all(
+          selected.map((m) =>
+            client.getOrderBook(m.symbol).then((book) =>
+              computeLiquidityScan(m, book),
+            ),
+          ),
+        );
+
+        results.sort((a, b) => b.liquidityScore - a.liquidityScore);
+
+        return ok({ scanned: results.length, results });
+      } catch (err) {
+        return fail(`Error running liquidity scan: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_trade_patterns
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_trade_patterns",
+    "Analyse recent public trade flow for a single symbol: buy pressure ratio, VWAP vs current price, large order detection, and directional momentum signal",
+    {
+      symbol: z.string().describe("Trading symbol to analyse (e.g. BTC, ETH, SOL)"),
+      limit: z
+        .number()
+        .int()
+        .min(10)
+        .max(500)
+        .default(100)
+        .optional()
+        .describe("Number of most-recent trades to include in the analysis (10–500, default 100)"),
+      large_order_threshold_usd: z
+        .number()
+        .min(0)
+        .default(50000)
+        .optional()
+        .describe("Minimum USD notional to classify a trade as a large order (default $50,000)"),
+    },
+    async ({ symbol, limit, large_order_threshold_usd }) => {
+      try {
+        const upperSymbol = symbol.toUpperCase();
+        const effectiveLimit = limit ?? 100;
+        const threshold = large_order_threshold_usd ?? 50_000;
+
+        const [trades, markets] = await Promise.all([
+          client.getRecentTrades(upperSymbol),
+          client.getMarkets(),
+        ]);
+
+        const market = markets.find(
+          (m) => m.symbol.toUpperCase() === upperSymbol,
+        );
+
+        if (!market) {
+          return fail(`Market not found: ${symbol}. Use pacifica_get_markets to list available symbols.`);
+        }
+
+        const currentPrice = market.markPrice;
+        const slicedTrades = trades.slice(-effectiveLimit);
+
+        const result = analyzeTradePatterns(
+          upperSymbol,
+          slicedTrades,
+          currentPrice,
+          threshold,
+        );
+
+        return ok(result);
+      } catch (err) {
+        return fail(`Error analysing trade patterns for ${symbol}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_alert_triage
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_alert_triage",
+    "Check all configured price/funding/volume alerts against live market data and return them ranked by urgency (triggered first, near-threshold second, dormant last)",
+    {
+      include_dormant: z
+        .boolean()
+        .default(false)
+        .optional()
+        .describe("When true, includes dormant alerts (more than 5% away from threshold) in the response (default false)"),
+    },
+    async ({ include_dormant }) => {
+      try {
+        const alerts = await alertManager.listAlerts();
+
+        if (alerts.length === 0) {
+          return ok({ total: 0, triggered: 0, near: 0, dormant: 0, results: [] });
+        }
+
+        const markets = await client.getMarkets();
+
+        // Build funding rates map only for symbols that have funding alerts
+        const fundingAlertSymbols = [
+          ...new Set(
+            alerts
+              .filter(
+                (a) =>
+                  a.type === "funding_above" || a.type === "funding_below",
+              )
+              .map((a) => a.symbol),
+          ),
+        ];
+
+        const fundingRatesMap = new Map<string, FundingRate>();
+
+        if (fundingAlertSymbols.length > 0) {
+          await Promise.all(
+            fundingAlertSymbols.map(async (sym) => {
+              try {
+                const history = await client.getFundingHistory(sym, 1);
+                if (history.length > 0) {
+                  fundingRatesMap.set(sym, history[0]!);
+                }
+              } catch {
+                // Ignore individual fetch errors; fallback to market fundingRate
+              }
+            }),
+          );
+        }
+
+        const triageResults = await alertManager.checkAlerts(
+          markets,
+          fundingRatesMap,
+        );
+
+        const includeDormant = include_dormant ?? false;
+        const filtered = includeDormant
+          ? triageResults
+          : triageResults.filter((r) => r.urgency !== "dormant");
+
+        const triggered = triageResults.filter(
+          (r) => r.urgency === "triggered",
+        ).length;
+        const near = triageResults.filter((r) => r.urgency === "near").length;
+        const dormant = triageResults.filter(
+          (r) => r.urgency === "dormant",
+        ).length;
+
+        return ok({
+          total: triageResults.length,
+          triggered,
+          near,
+          dormant,
+          results: filtered,
+        });
+      } catch (err) {
+        return fail(`Error running alert triage: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_market_snapshot
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_market_snapshot",
+    "Return a comprehensive single-call market intelligence snapshot: top gainers/losers, highest funding, liquidity leaders, and any triggered/near alerts — ideal as a daily briefing for AI agents",
+    {
+      symbols: z
+        .array(z.string())
+        .optional()
+        .describe("Restrict the snapshot to these symbols only. If omitted, all markets are included"),
+    },
+    async ({ symbols }) => {
+      try {
+        const [allMarkets, allAlerts] = await Promise.all([
+          client.getMarkets(),
+          alertManager.listAlerts(),
+        ]);
+
+        let markets = allMarkets;
+        if (symbols && symbols.length > 0) {
+          const upper = symbols.map((s) => s.toUpperCase());
+          markets = allMarkets.filter((m) =>
+            upper.includes(m.symbol.toUpperCase()),
+          );
+        }
+
+        // Top 5 by volume for liquidity scan
+        const top5 = [...markets]
+          .sort((a, b) => b.volume24h - a.volume24h)
+          .slice(0, 5);
+
+        const [liquidityScansRaw, triageResults] = await Promise.all([
+          Promise.all(
+            top5.map((m) =>
+              client
+                .getOrderBook(m.symbol)
+                .then((book) => computeLiquidityScan(m, book)),
+            ),
+          ),
+          allAlerts.length > 0
+            ? alertManager.checkAlerts(markets, new Map())
+            : Promise.resolve([]),
+        ]);
+
+        const liquidityLeaders = [...liquidityScansRaw].sort(
+          (a, b) => b.liquidityScore - a.liquidityScore,
+        );
+
+        const marketsAsSummary: MarketSummary[] = markets.map((m, i) =>
+          toMarketSummary(m, i + 1, m.volume24h),
+        );
+
+        const snapshot: MarketIntelligenceSnapshot = {
+          schemaVersion: SCHEMA_VERSION,
+          generatedAt: new Date().toISOString(),
+          markets: marketsAsSummary,
+          topGainers: topGainers(markets, 5),
+          topLosers: topLosers(markets, 5),
+          highestFunding: byFundingRate(markets, 5),
+          liquidityLeaders,
+          triggeredAlerts: triageResults.filter(
+            (r) => r.urgency === "triggered",
+          ),
+          nearAlerts: triageResults.filter((r) => r.urgency === "near"),
+        };
+
+        return ok(snapshot);
+      } catch (err) {
+        return fail(`Error building market snapshot: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
   );
@@ -1373,6 +1742,7 @@ async function main(): Promise<void> {
   const journalLogger = new JournalLogger();
   const smartManager = new SmartOrderManager(client);
   smartManager.load();
+  const alertManager = new AlertManager();
 
   // -----------------------------------------------------------------------
   // 3. Create and configure the MCP server
@@ -1386,6 +1756,7 @@ async function main(): Promise<void> {
   registerReadTools(server, client, config, guardrails, spendingTracker, logger);
   registerAnalyticsTools(server, client, journalLogger, smartManager);
   registerFundingTools(server, client);
+  registerIntelligenceTools(server, client, alertManager);
   registerWriteTools(server, client, config, guardrails, spendingTracker, logger, smartManager);
 
   // -----------------------------------------------------------------------

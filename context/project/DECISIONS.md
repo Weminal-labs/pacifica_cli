@@ -90,3 +90,22 @@
 **Options Considered:** HMAC API key/secret, Ed25519 wallet signing
 **Rationale:** Pacifica's API requires Ed25519 signatures, not HMAC. Config stores a Base58-encoded private key. Using `tweetnacl` for signing and `bs58` for Base58 encoding/decoding. This eliminates API key management entirely — the user just needs their wallet keypair.
 **Consequences:** No API key rotation or management. Private key must be kept secure in `.pacifica.yaml`. Signing process involves recursive key sorting, compact JSON serialization, and Base58-encoded signatures.
+
+---
+
+### D9: Stable JSON schema for agent-readable output
+
+**Decision:** All intelligence MCP tools return data conforming to versioned TypeScript interfaces
+defined in `src/core/intelligence/schema.ts`. Raw API passthrough is prohibited.
+
+**Date:** 2026-04-05
+**Context:** Agents consuming MCP tools need consistent, predictable data shapes.
+Raw API fields change format (strings vs numbers, field renames). Schema version field
+allows future breaking changes to be detected.
+
+**Rationale:** AI agents cannot tolerate schema drift. A stable contract = agents can
+be written once and work across API updates. `schemaVersion: "1.0"` on snapshots lets
+agents verify compatibility.
+
+**Consequences:** All intelligence functions must parse, transform, and validate before returning.
+Minor overhead vs. raw passthrough.

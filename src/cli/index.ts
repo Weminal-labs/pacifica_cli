@@ -40,9 +40,12 @@ async function registerCommands(): Promise<void> {
 
   const scanCmd = new Command("scan")
     .description("Scan markets for trading opportunities")
+    .option("--gainers", "Sort by 24h gain (descending)")
+    .option("--losers", "Sort by 24h loss (descending)")
+    .option("--min-volume <usd>", "Filter markets below this 24h volume in USD", parseFloat)
     .action(async () => {
       const { scanCommand } = await import("./commands/scan.js");
-      await scanCommand(program.opts());
+      await scanCommand({ ...program.opts(), ...scanCmd.opts() });
     });
 
   // ---------------------------------------------------------------------------
@@ -73,6 +76,9 @@ async function registerCommands(): Promise<void> {
   const { createSmartCommand } = await import("./commands/smart.js");
   const smartCmd = createSmartCommand();
 
+  const { createAlertsCommand } = await import("./commands/alerts.js");
+  const alertsCmd = createAlertsCommand();
+
   program.addCommand(initCmd);
   program.addCommand(scanCmd);
   program.addCommand(tradeCmd);
@@ -83,6 +89,7 @@ async function registerCommands(): Promise<void> {
   program.addCommand(journalCmd);
   program.addCommand(fundingCmd);
   program.addCommand(smartCmd);
+  program.addCommand(alertsCmd);
 }
 
 // ---------------------------------------------------------------------------
