@@ -30,13 +30,17 @@ const BASE_PRICES: Record<string, number> = {
   "SOL-USDC-PERP": 145,
 };
 
-/** Five anonymised fake trader IDs. */
+/**
+ * Real trader wallet addresses from the Pacifica testnet leaderboard.
+ * Source: https://test-api.pacifica.fi/api/v1/leaderboard (fetched 2026-04-14)
+ * Sorted by all-time PnL descending (top performers first).
+ */
 const TRADER_IDS = [
-  createHash("sha256").update("trader_alpha_demo").digest("hex"),
-  createHash("sha256").update("trader_beta_demo").digest("hex"),
-  createHash("sha256").update("trader_gamma_demo").digest("hex"),
-  createHash("sha256").update("trader_delta_demo").digest("hex"),
-  createHash("sha256").update("trader_epsilon_demo").digest("hex"),
+  "ACzEZTgHWB6i9M1eMU5TZiYbGoi2bVrtVywVbH8hS7Cy", // #1 PnL all-time: +$1.09M
+  "EcX5xSDT45Nvhi2gMTjTnhF3KT2w4sPF54esEZS3hwZu", // #2 PnL all-time: +$1.24M
+  "jayEHbBuEQxMhZnqVn8ZoPXBXSD7TYQ89aJQw3hKs8k",  // #3 PnL all-time: +$286K
+  "7gV81bz99MUBVb2aLYxW7MG1RMDdRdJYTPyC2syjba8y", // #4 PnL all-time: +$160K
+  "7C3sXQ6KvXJLkYGwzjNy2BHpkfEnRHzzfVAgUS64CDEd", // #5 PnL all-time: +$145K
 ];
 
 // ---------------------------------------------------------------------------
