@@ -478,9 +478,17 @@ export async function startServer(port = 4242): Promise<void> {
 
 // ---------------------------------------------------------------------------
 // Entrypoint — run directly: node dist/intelligence-api.js
+// Only auto-starts when this file is the process entrypoint, not when imported.
 // ---------------------------------------------------------------------------
 
-startServer().catch((err) => {
-  console.error("Failed to start intelligence API:", err);
-  process.exit(1);
-});
+const isMain =
+  process.argv[1] &&
+  (process.argv[1].endsWith("intelligence-api.js") ||
+    process.argv[1].endsWith("intelligence-api/server.js"));
+
+if (isMain) {
+  startServer().catch((err) => {
+    console.error("Failed to start intelligence API:", err);
+    process.exit(1);
+  });
+}
