@@ -301,10 +301,8 @@ export async function createServer() {
         }
       }
 
-      const leaderboard = entries.map((e) => ({
-        ...e,
-        trader_id: e.trader_id.slice(0, 12),
-      }));
+      // Return full trader_id — truncation happens in the UI
+      const leaderboard = entries.map((e) => ({ ...e }));
 
       return reply.code(200).send({ leaderboard });
     },
@@ -460,6 +458,93 @@ export async function createServer() {
           message: err instanceof Error ? err.message : String(err),
         });
       }
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // GET /api/intelligence/trader/:address
+  // Returns reputation + all trade records for a specific trader wallet.
+  // Also fetches real on-chain PnL from the Pacifica testnet leaderboard.
+  // -------------------------------------------------------------------------
+
+  fastify.get<{ Params: { address: string } }>(
+    "/api/intelligence/trader/:address",
+    async (req, reply) => {
+      const { address } = req.params;
+
+      const [records, rep] = await Promise.all([
+        loadRecords(),
+        loadReputation(),
+      ]);
+
+      // Match by full address or by prefix (for truncated links)
+      const reputationEntry = rep.get(address)
+        ?? Array.from(rep.values()).find((e) => e.trader_id.startsWith(address));
+
+      if (!reputationEntry) {
+        return reply.code(404).send({ error: "Trader not found", address });
+      }
+
+      const fullAddress = reputationEntry.trader_id;
+
+      // All intelligence records for this trader
+      const traderRecords = records
+        .filter((r) => r.trader_id === fullAddress)
+        .sort((a, b) => new Date(b.opened_at).getTime() - new Date(a.opened_at).getTime())
+        .map((r) => ({
+          id: r.id,
+          asset: r.asset,
+          direction: r.direction,
+          size_usd: r.size_usd,
+          entry_price: r.entry_price,
+          exit_price: r.exit_price ?? null,
+          opened_at: r.opened_at,
+          closed_at: r.closed_at ?? null,
+          pattern_tags: r.pattern_tags,
+          pnl_usd: r.outcome?.pnl_usd ?? null,
+          pnl_pct: r.outcome?.pnl_pct ?? null,
+          profitable: r.outcome?.profitable ?? null,
+          duration_minutes: r.outcome?.duration_minutes ?? null,
+        }));
+
+      // Real on-chain PnL from Pacifica testnet leaderboard
+      let onchain: {
+        pnl_1d: number; pnl_7d: number; pnl_30d: number; pnl_all_time: number;
+        equity_current: number; volume_all_time: number; volume_30d: number;
+      } | null = null;
+
+      try {
+        const lb = await fetch("https://test-api.pacifica.fi/api/v1/leaderboard", {
+          signal: AbortSignal.timeout(6_000),
+        });
+        if (lb.ok) {
+          const json = await lb.json() as { data: Array<{ address: string; [k: string]: string }> };
+          const row = (json.data ?? []).find(
+            (t) => t.address === fullAddress || t.address.startsWith(address.slice(0, 12)),
+          );
+          if (row) {
+            onchain = {
+              pnl_1d:         parseFloat(row.pnl_1d ?? "0"),
+              pnl_7d:         parseFloat(row.pnl_7d ?? "0"),
+              pnl_30d:        parseFloat(row.pnl_30d ?? "0"),
+              pnl_all_time:   parseFloat(row.pnl_all_time ?? "0"),
+              equity_current: parseFloat(row.equity_current ?? "0"),
+              volume_all_time:parseFloat(row.volume_all_time ?? "0"),
+              volume_30d:     parseFloat(row.volume_30d ?? "0"),
+            };
+          }
+        }
+      } catch {
+        // onchain stays null — graceful degradation
+      }
+
+      return reply.code(200).send({
+        address: fullAddress,
+        reputation: reputationEntry,
+        trade_records: traderRecords,
+        onchain_pnl: onchain,
+        generated_at: new Date().toISOString(),
+      });
     },
   );
 

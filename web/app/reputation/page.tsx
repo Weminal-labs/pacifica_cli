@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { OrangeLabel } from "../../components/ui/OrangeLabel";
 import type { ReputationEntry } from "../../lib/types";
 import { DEMO_REP } from "../../lib/demo-data";
@@ -54,8 +55,13 @@ export default async function ReputationPage() {
                 className="border-b border-border hover:bg-bg-surface/50 transition-colors"
               >
                 <td className="px-5 py-4 text-muted">#{i + 1}</td>
-                <td className="px-5 py-4 font-mono text-white text-xs">
-                  {e.trader_id.slice(0, 12)}...
+                <td className="px-5 py-4 font-mono text-xs">
+                  <Link
+                    href={`/trader/${e.trader_id}`}
+                    className="text-orange-400 hover:text-orange-300 hover:underline transition-colors"
+                  >
+                    {e.trader_id.slice(0, 12)}...
+                  </Link>
                 </td>
                 <td className="px-5 py-4">
                   <span className="text-accent font-bold">{e.overall_rep_score}</span>

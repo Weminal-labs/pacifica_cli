@@ -58,6 +58,53 @@ export interface ConfirmedSignal {
   reason: string;
 }
 
+export interface TradeRecord {
+  id: string;
+  asset: string;
+  direction: "long" | "short";
+  size_usd: number;
+  entry_price: number;
+  exit_price: number | null;
+  opened_at: string;
+  closed_at: string | null;
+  pattern_tags: string[];
+  pnl_usd: number | null;
+  pnl_pct: number | null;
+  profitable: boolean | null;
+  duration_minutes: number | null;
+}
+
+export interface OnchainPnl {
+  pnl_1d: number;
+  pnl_7d: number;
+  pnl_30d: number;
+  pnl_all_time: number;
+  equity_current: number;
+  volume_all_time: number;
+  volume_30d: number;
+}
+
+export interface TraderProfile {
+  address: string;
+  reputation: ReputationEntry & {
+    overall_rep_score: number;
+    overall_win_rate: number;
+    closed_trades: number;
+    total_trades: number;
+    top_patterns: string[];
+    accuracy_by_condition: Record<string, {
+      condition_key: string;
+      total_trades: number;
+      profitable_trades: number;
+      win_rate: number;
+      avg_pnl_pct: number;
+    }>;
+  };
+  trade_records: TradeRecord[];
+  onchain_pnl: OnchainPnl | null;
+  generated_at: string;
+}
+
 export interface SocialData {
   asset: string;
   social: SocialContext;
