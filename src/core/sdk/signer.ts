@@ -25,6 +25,8 @@ export interface SignerConfig {
   publicKey: string;
   /** Optional agent wallet public key for delegated signing. */
   agentWallet?: string;
+  /** Optional builder code — included in signed payload for order-creating operations. */
+  builderCode?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -45,12 +47,16 @@ export interface SignerConfig {
 export function createSignerFromConfig(config: {
   private_key: string;
   account?: string;
+  builder_code?: string;
 }): SignerConfig {
   const signer = createSigner(config.private_key);
   if (config.account && config.account !== signer.publicKey) {
     // Agent wallet mode: sign with agent key, but use main account
     signer.agentWallet = signer.publicKey; // agent's public key
     signer.publicKey = config.account;     // main wallet's public key
+  }
+  if (config.builder_code) {
+    signer.builderCode = config.builder_code;
   }
   return signer;
 }
@@ -93,6 +99,14 @@ export function createSigner(secretKeyBase58: string): SignerConfig {
  * `signature`, `timestamp`, `expiry_window`, the operation-specific fields,
  * and optionally `agent_wallet`.
  */
+/** Operation types that support the builder_code field. */
+const ORDER_OPERATION_TYPES = new Set([
+  "create_market_order",
+  "create_order",
+  "create_stop_order",
+  "set_position_tpsl",
+]);
+
 export function signPayload(
   signer: SignerConfig,
   operationType: string,
@@ -107,8 +121,15 @@ export function signPayload(
     type: operationType,
   };
 
+  // Inject builder_code into the payload for order-creating operations.
+  // Must be in the data object before signing (per Builder Program spec).
+  const signedPayload = { ...payload };
+  if (signer.builderCode && ORDER_OPERATION_TYPES.has(operationType)) {
+    signedPayload.builder_code = signer.builderCode;
+  }
+
   // Build the message to sign: header + { data: payload }, then sort & serialize.
-  const message = buildSignMessage(header, payload);
+  const message = buildSignMessage(header, signedPayload);
   const messageBytes = new TextEncoder().encode(message);
 
   // Ed25519 detached signature.
@@ -121,7 +142,7 @@ export function signPayload(
     signature,
     timestamp,
     expiry_window: expiryWindow,
-    ...payload,
+    ...signedPayload,
   };
 
   if (signer.agentWallet) {

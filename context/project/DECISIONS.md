@@ -109,3 +109,62 @@ agents verify compatibility.
 
 **Consequences:** All intelligence functions must parse, transform, and validate before returning.
 Minor overhead vs. raw passthrough.
+
+---
+
+### D10: Builder Code Injection at Signer Level
+
+**Decision:** Inject `builder_code` at `src/core/sdk/signer.ts` `signPayload()` for ALL order types.
+One-time config at init, covers every order automatically.
+
+**Date:** 2026-04-12
+**Context:** Need to earn builder fees on all Pacifica trades. Could inject at CLI layer,
+MCP layer, or core SDK layer.
+
+**Options Considered:** CLI layer (repeat in each command), MCP layer (repeat in each tool),
+core SDK signer (one place, all orders)
+
+**Rationale:** Signer is the single point where every authenticated order payload is created.
+No way to accidentally skip it. If it's in the signer, it's in every order — trade, smart,
+arb, etc. Config stores `builder_code?: string`, wired through init wizard.
+
+**Consequences:** Builder code is baked into every order signature. Cannot be per-order.
+Simplifies code and eliminates bugs.
+
+---
+
+### D11: Arbitrage Module as Independent Core Library
+
+**Decision:** Create `src/core/arb/` as a standalone module (like smart orders), not extending
+SmartOrderManager. ArbManager.openPosition() is public so MCP tools and CLI can call it directly.
+
+**Date:** 2026-04-12
+**Context:** Arb bot is different from smart orders (separate poll loop, different lifecycle,
+separate state file). Could merge into smart order manager, or keep separate.
+
+**Options Considered:** Extend SmartOrderManager, embed in scanner, standalone module
+
+**Rationale:** Arb has its own lifecycle (scanner → executor → monitor → exiter over hours).
+Smart orders track existing positions. Separate modules = separate concerns, easier testing,
+easier to disable/enable independently. Shared ArbManager means one poll loop, consistent state.
+
+**Consequences:** ~900 lines of new code in src/core/arb/. State lives in separate file.
+But very clean separation.
+
+---
+
+### D12: Cross-Exchange Rates as Signal Only (No Hedge Execution)
+
+**Decision:** Binance/Bybit public funding rates are read-only signals. No hedge orders executed
+on external venues. Controlled by `arb.use_external_rates` config flag.
+
+**Date:** 2026-04-12
+**Context:** Could build cross-exchange hedge (long on Pacifica, short on Binance). Adds complexity
+and API key management. Out of scope for v1.
+
+**Options Considered:** Fetch and use for divergence scoring only, execute hedges on external venues
+
+**Rationale:** v1 scope is Pacifica-only. Divergence scoring helps identify underpriced opportunities,
+but we don't hedge them. Keeps scope tight. Future enhancement.
+
+**Consequences:** Arb bot cannot arbitrage Pacifica/Binance spreads. Only collects Pacifica funding.

@@ -50,10 +50,26 @@ const agentConfigSchema = z.object({
     .default(DEFAULT_CONFIG.agent.require_confirmation_above),
 });
 
+const arbConfigSchema = z.object({
+  enabled: z.boolean().default(DEFAULT_CONFIG.arb.enabled),
+  min_apr_threshold: z.number().positive().default(DEFAULT_CONFIG.arb.min_apr_threshold),
+  max_concurrent_positions: z.number().int().positive().default(DEFAULT_CONFIG.arb.max_concurrent_positions),
+  position_size_usd: z.number().positive().default(DEFAULT_CONFIG.arb.position_size_usd),
+  min_market_volume_24h_usd: z.number().nonnegative().default(DEFAULT_CONFIG.arb.min_market_volume_24h_usd),
+  max_spread_bps: z.number().positive().default(DEFAULT_CONFIG.arb.max_spread_bps),
+  scan_interval_ms: z.number().positive().default(DEFAULT_CONFIG.arb.scan_interval_ms),
+  exit_policy: z.enum(["settlement", "rate_inverted", "apr_below", "pnl_target"]).default(DEFAULT_CONFIG.arb.exit_policy),
+  exit_apr_floor: z.number().nonnegative().default(DEFAULT_CONFIG.arb.exit_apr_floor),
+  use_external_rates: z.boolean().default(DEFAULT_CONFIG.arb.use_external_rates),
+  external_divergence_bps: z.number().nonnegative().default(DEFAULT_CONFIG.arb.external_divergence_bps),
+  max_daily_loss_usd: z.number().positive().default(DEFAULT_CONFIG.arb.max_daily_loss_usd),
+});
+
 export const configSchema = z.object({
   network: z.enum(["testnet", "mainnet"]),
   private_key: z.string().min(1, "Private key is required"),
   account: z.string().optional(),
+  builder_code: z.string().max(16).optional(),
   defaults: z
     .object({
       leverage: z
@@ -77,6 +93,7 @@ export const configSchema = z.object({
     })
     .default(DEFAULT_CONFIG.defaults),
   agent: agentConfigSchema.default(DEFAULT_CONFIG.agent),
+  arb: arbConfigSchema.default(DEFAULT_CONFIG.arb),
 });
 
 // ---------------------------------------------------------------------------

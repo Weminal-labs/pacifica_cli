@@ -44,18 +44,21 @@ src/
 │   │   ├── agent.ts       # pacifica agent status/stop/start/config/log
 │   │   ├── smart.ts       # pacifica smart trailing/list/cancel
 │   │   ├── journal.ts     # pacifica journal
+│   │   ├── arb.ts         # pacifica arb scan/start/stop/status/list/close/config
 │   │   └── init.ts        # pacifica init (onboarding wizard)
+│   ├── views/             # Ink TUI components
+│   │   ├── ArbView.tsx    # Arb status display (positions, funding, P&L)
 │   └── components/        # Shared Ink components
 │       └── MarketTable.tsx # Live market data table
 ├── core/                   # Shared business logic
 │   ├── sdk/               # Pacifica API wrapper
-│   │   ├── client.ts      # REST client with Ed25519 auth
-│   │   ├── signer.ts      # Ed25519 request signing
+│   │   ├── client.ts      # REST client with Ed25519 auth + builder_code
+│   │   ├── signer.ts      # Ed25519 request signing + builder_code injection
 │   │   ├── websocket.ts   # WebSocket client with reconnection
 │   │   └── types.ts       # API response types
 │   ├── config/            # Config file management
-│   │   ├── loader.ts      # Load/parse .pacifica.yaml
-│   │   └── types.ts       # Config TypeScript types
+│   │   ├── loader.ts      # Load/parse .pacifica.yaml (incl. ArbConfig)
+│   │   └── types.ts       # Config TypeScript types (incl. builder_code, ArbConfig)
 │   ├── agent/             # Agent safety modules
 │   │   ├── guardrails.ts  # Check action against limits
 │   │   ├── spending-tracker.ts # Daily spending tracker
@@ -65,10 +68,22 @@ src/
 │   ├── smart/             # Smart order manager
 │   │   ├── manager.ts     # Poll loop, order lifecycle
 │   │   └── types.ts       # Smart order types
+│   ├── arb/               # Funding rate arbitrage bot (M11)
+│   │   ├── types.ts       # ArbOpportunity, ArbPosition, ArbState, ArbLeg, etc.
+│   │   ├── scanner.ts     # detectOpportunities() — opportunity detection engine
+│   │   ├── external.ts    # Binance/Bybit public funding rate fetchers
+│   │   ├── executor.ts    # enterPosition(), exitPosition(), fee estimators
+│   │   ├── pnl.ts         # P&L calculation, daily loss tracking, summarization
+│   │   └── manager.ts     # ArbManager class with poll loop (5s/15s) + state persistence
+│   ├── intelligence/      # Agent-readable market intelligence (M10)
+│   │   ├── schema.ts      # Stable TypeScript interfaces (v1.0)
+│   │   ├── filter.ts      # Market filter engine
+│   │   ├── patterns.ts    # Trade pattern analyzer
+│   │   └── alerts.ts      # Alert manager + triage
 │   └── risk/              # Risk analysis
 │       └── calculator.ts  # Position risk calculations
 └── mcp/                   # MCP server
-    └── server.ts          # All 23 MCP tools (10 read + 5 analytics + 2 funding + 6 write)
+    └── server.ts          # All ~29 MCP tools (10 read + 5 analytics + 5 intelligence + 2 funding + 6 write + 6 arb)
 ```
 
 ## Data Flow
@@ -94,6 +109,46 @@ src/
 3. `pacifica scan` re-renders table on every tick
 4. If disconnect > 5s → fallback to REST polling every 2s
 5. On reconnect → resume WebSocket, stop polling
+
+## Funding Rate Arbitrage Bot Module (`src/core/arb/`)
+
+The arb module is a standalone, poll-based bot for detecting and executing funding rate arbitrage positions.
+
+### Lifecycle
+
+1. **Scanner** (`scanner.ts`): runs every 30s, evaluates all markets for opportunities
+2. **Executor** (`executor.ts`): on opportunity, validates fees, enters position
+3. **Monitor**: runs every 5s, tracks accrued funding, checks exit conditions
+4. **Exiter**: on settlement or max-hold-time, closes position, records P&L
+
+### State Persistence
+
+- All positions and history persisted to `~/.pacifica/arb-state.json`
+- Atomic writes (tmp → rename) with mode 0o600 (owner-read-write only)
+- Format: `{ version, positions: ArbPosition[], history: ArbLifetimeStats[], lastSync }`
+
+### Builder Code Integration
+
+- `builder_code` injected in `src/core/sdk/signer.ts` `signPayload()` for ALL order types
+- Configured via `.pacifica.yaml` `builder_code?: string`
+- Wired through init wizard as optional step
+- Ensures all arb bot trades earn builder fee
+
+### Rate Fetching
+
+- **Pacifica**: native funding rates from API
+- **External** (Binance/Bybit): public endpoints, no auth
+- External rates used as signal only (divergence scoring, not hedging)
+- Configurable via `arb.use_external_rates` flag
+
+### Guardrails
+
+- Max concurrent notional cap (configurable)
+- Per-market 8h cooldown after close
+- Rate-sign flip abort at entry
+- Fee-to-funding ratio gate (fees < 50% of one-interval funding)
+- Settlement proximity hard veto (no entry within 2 minutes of settlement)
+- Daily loss limit with auto-disable on breach ($200 default)
 
 ## Key Design Decisions
 

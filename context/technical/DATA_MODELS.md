@@ -8,6 +8,7 @@
 interface PacificaConfig {
   network: 'testnet' | 'mainnet';
   private_key: string;     // Base58-encoded Ed25519 secret key (Solana wallet)
+  builder_code?: string;   // Optional builder code for earning fees on orders
   defaults: {
     leverage: number;       // default: 5
     tp_distance: number;    // default: 3 (percent)
@@ -15,6 +16,7 @@ interface PacificaConfig {
     slippage: number;       // default: 0.5 (percent)
   };
   agent: AgentConfig;
+  arb?: ArbConfig;         // Optional funding rate arb bot config
   hooks: HooksConfig;
 }
 
@@ -26,6 +28,18 @@ interface AgentConfig {
   allowed_actions: string[];
   blocked_actions: string[];
   require_confirmation_above: number;
+}
+
+interface ArbConfig {
+  enabled: boolean;
+  min_apr_threshold: number;          // default: 10 (percent annualized)
+  max_concurrent_positions: number;   // default: 3
+  max_concurrent_notional_usd: number;// default: 5000
+  min_market_volume_24h_usd: number;  // default: 50000
+  max_spread_bps: number;             // default: 50 (basis points)
+  use_external_rates: boolean;        // default: true (Binance/Bybit)
+  max_daily_loss_usd: number;         // default: 200
+  market_cooldown_hours: number;      // default: 8 (after close)
 }
 
 interface HooksConfig {
@@ -94,6 +108,74 @@ interface Account {
 }
 ```
 
+## Arbitrage Models (`src/core/arb/types.ts`)
+
+```typescript
+interface ArbOpportunity {
+  symbol: string;
+  fundingRate: number;         // per-period decimal
+  apr: number;                 // annualized percent
+  side: 'long_collects' | 'short_collects';
+  score: number;               // composite ranking score
+  volume24h: number;           // USD
+  liquidityFactor: number;     // volume / minVolume
+  spreadBps: number;           // (ask - bid) / mid * 10000
+  externalRate?: number;       // Binance/Bybit if available
+  externalDivergence?: number; // APR difference if external available
+}
+
+interface ArbLeg {
+  orderId: number;
+  symbol: string;
+  side: 'long' | 'short';      // collector's position side
+  size: number;                // base asset amount
+  entryPrice: number;
+  createdAt: string;           // ISO
+}
+
+interface ArbPosition {
+  id: string;                  // UUID
+  symbol: string;
+  side: 'long_collects' | 'short_collects';
+  legs: ArbLeg[];              // typically 1, but supports multi-leg
+  enteredAt: string;           // ISO
+  expectedExitAt: string;      // settlement time estimate
+  fundingAccruedUsd: number;   // running total
+  feesUsd: number;             // entry + exit
+  status: 'open' | 'closing' | 'closed';
+}
+
+interface ArbLifetimeStats {
+  symbol: string;
+  openedAt: string;           // ISO
+  closedAt?: string;          // ISO, if closed
+  fundingEarnedUsd: number;
+  feesUsd: number;
+  netPnlUsd: number;          // funding - fees
+  annualizedReturnPct: number;// annualized on hold duration
+  holdDurationSeconds: number;
+  status: 'closed' | 'active' | 'cancelled';
+}
+
+interface ArbState {
+  version: number;
+  positions: ArbPosition[];
+  history: ArbLifetimeStats[];
+  dailyLossUsd: number;
+  lastDailyResetAt: string;   // ISO
+  lastScanAt: string;         // ISO
+  lastSyncAt: string;         // ISO
+}
+
+interface ExternalFundingRate {
+  symbol: string;
+  fundingRate: number;
+  apr: number;
+  source: 'binance' | 'bybit';
+  timestamp: string;          // ISO
+}
+```
+
 ## Local Storage Models
 
 ### Journal Entry (`.pacifica/journal.json`)
@@ -153,6 +235,22 @@ interface PartialTpConfig {
   filled_levels: number[];
 }
 ```
+
+### Arbitrage Bot State (`.pacifica/arb-state.json`)
+
+```typescript
+interface ArbStateFile {
+  version: number;
+  positions: ArbPosition[];    // currently open positions
+  history: ArbLifetimeStats[]; // closed positions and stats
+  dailyLossUsd: number;        // running total for today
+  lastDailyResetAt: string;    // ISO timestamp of midnight UTC
+  lastScanAt: string;          // ISO, last opportunity scan time
+  lastSyncAt: string;          // ISO, last write to file
+}
+```
+
+Stored at `~/.pacifica/arb-state.json` with mode 0o600 (owner read/write only).
 
 ## Intelligence Layer (`src/core/intelligence/schema.ts`)
 

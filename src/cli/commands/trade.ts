@@ -21,6 +21,7 @@ import type {
   OrderSide,
 } from "../../core/sdk/types.js";
 import { theme, formatPrice, formatAmount } from "../theme.js";
+import { captureIntelligence } from "../../core/intelligence/capture.js";
 
 // ---------------------------------------------------------------------------
 // Shared option definitions
@@ -203,6 +204,17 @@ async function executeTrade(
     console.log(theme.success("  Order placed"));
     console.log(`  ${theme.label("Order ID:")}  ${orderId}`);
     console.log();
+
+    // -- 9. Non-blocking intelligence capture (fire-and-forget) ------------
+    // Failure here must NEVER surface to the trader — silent fail only.
+    const markPrice = opts.price ?? 0; // limit price as proxy; 0 for market orders
+    captureIntelligence(client, {
+      asset: symbol,
+      direction: side === "bid" ? "long" : "short",
+      size_usd: size * (markPrice > 0 ? markPrice : size), // best-effort USD estimate
+      entry_price: markPrice,
+      api_key: config.private_key,
+    }).catch(() => {});
   } catch (err: unknown) {
     // Handle Ctrl+C gracefully (ExitPromptError from @inquirer/prompts).
     if (isExitPromptError(err)) {

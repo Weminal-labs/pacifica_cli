@@ -46,6 +46,17 @@ These are the tools the MCP server exposes. Each tool has a defined name, descri
 | `pacifica_alert_triage` | `{ include_dormant?: boolean }` | `AlertTriageResult[]` sorted by urgency |
 | `pacifica_market_snapshot` | `{ symbols?: string[] }` | `MarketIntelligenceSnapshot` — composite stable JSON |
 
+### Arbitrage Tools (6 — guardrails enforced)
+
+| Tool | Input | Output | Guardrail Checks |
+|------|-------|--------|-----------------|
+| `pacifica_arb_scan` | `{ min_apr?: number, use_external?: boolean, limit?: number }` | `ArbOpportunity[]` ranked by score | none (read-only) |
+| `pacifica_arb_positions` | `{}` | `{ active: ArbPosition[], history: ArbLifetimeStats[] }` | none (read-only) |
+| `pacifica_arb_pnl_summary` | `{ period?: "today"\|"all" }` | `{ totalFundingUsd, totalFeesUsd, netPnlUsd, count, avgApyPct }` | none (read-only) |
+| `pacifica_arb_open` | `{ symbol: string, side: "long_collects"\|"short_collects" }` | `{ success, positionId, orderId, createdAt, estimatedFundingUsd }` | enabled, action allowed, max positions, daily loss limit |
+| `pacifica_arb_close` | `{ position_id: string }` | `{ success, closedOrderId, fundingAccrued, feesTotal, netPnlUsd }` | enabled, action allowed |
+| `pacifica_arb_configure` | `{ min_apr?: number, max_concurrent?: number, max_notional_usd?: number, max_daily_loss?: number, enabled?: boolean }` | Confirmation + new config | none (config only) |
+
 ### Write Tools (6 — guardrails enforced)
 
 | Tool | Input | Output | Guardrail Checks |

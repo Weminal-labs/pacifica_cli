@@ -78,19 +78,99 @@ Tasks currently being worked on or up next.
 
 | # | Status | Task | Feature |
 |---|--------|------|---------|
-| T44 | `[ ]` | Create `context/features/m10-agent-intelligence.md` | M10 |
-| T45 | `[ ]` | Update API_CONTRACTS.md, DATA_MODELS.md, ROADMAP.md, OVERVIEW.md, DECISIONS.md | M10 |
-| T46 | `[ ]` | Create `src/core/intelligence/schema.ts` — stable TypeScript interfaces | M10 |
-| T47 | `[ ]` | Create `src/core/intelligence/filter.ts` — market filter engine | M10 |
-| T48 | `[ ]` | Create `src/core/intelligence/patterns.ts` — trade pattern analyzer | M10 |
-| T49 | `[ ]` | Create `src/core/intelligence/alerts.ts` — alert manager + triage | M10 |
-| T50 | `[ ]` | Add `pacifica_top_markets` MCP tool to server.ts | M10 |
-| T51 | `[ ]` | Add `pacifica_liquidity_scan` MCP tool to server.ts | M10 |
-| T52 | `[ ]` | Add `pacifica_trade_patterns` MCP tool to server.ts | M10 |
-| T53 | `[ ]` | Add `pacifica_alert_triage` + `pacifica_market_snapshot` MCP tools | M10 |
-| T54 | `[ ]` | Create `src/cli/commands/alerts.ts` + register in index.ts | M10 |
-| T55 | `[ ]` | Update `src/cli/commands/scan.tsx` — add --gainers/--losers/--min-volume/--json | M10 |
-| T56 | `[ ]` | Create `.claude/commands/intelligence.md` agent recipe skill | M10 |
+| T44 | `[x]` | Create `context/features/m10-agent-intelligence.md` | M10 |
+| T45 | `[x]` | Update API_CONTRACTS.md, DATA_MODELS.md, ROADMAP.md, OVERVIEW.md, DECISIONS.md | M10 |
+| T46 | `[x]` | Create `src/core/intelligence/schema.ts` — stable TypeScript interfaces | M10 |
+| T47 | `[x]` | Create `src/core/intelligence/filter.ts` — market filter engine | M10 |
+| T48 | `[x]` | Create `src/core/intelligence/patterns.ts` — trade pattern analyzer | M10 |
+| T49 | `[x]` | Create `src/core/intelligence/alerts.ts` — alert manager + triage | M10 |
+| T50 | `[x]` | Add `pacifica_top_markets` MCP tool to server.ts | M10 |
+| T51 | `[x]` | Add `pacifica_liquidity_scan` MCP tool to server.ts | M10 |
+| T52 | `[x]` | Add `pacifica_trade_patterns` MCP tool to server.ts | M10 |
+| T53 | `[x]` | Add `pacifica_alert_triage` + `pacifica_market_snapshot` MCP tools | M10 |
+| T54 | `[x]` | Create `src/cli/commands/alerts.ts` + register in index.ts | M10 |
+| T55 | `[x]` | Update `src/cli/commands/scan.tsx` — add --gainers/--losers/--min-volume/--json | M10 |
+| T56 | `[x]` | Create `.claude/commands/intelligence.md` agent recipe skill | M10 |
+
+---
+
+## Sprint — M11 Intelligence Layer
+
+### Phase 01: Capture Layer (P0 — do first)
+
+| # | Status | Task | Phase |
+|---|--------|------|-------|
+| TI1 | `[x]` | Extend `schema.ts` — add IntelligenceRecord, MarketContext, TradeOutcome, DetectedPattern, TraderReputation | 01 |
+| TI2 | `[x]` | Create `src/core/intelligence/store.ts` — append-only JSON CRUD | 01 |
+| TI3 | `[x]` | Create `src/core/intelligence/capture.ts` — market context snapshot at trade entry | 01 |
+| TI4 | `[x]` | Hook `captureIntelligence()` into `src/cli/commands/trade.ts` (non-blocking) | 01 |
+| TI5 | `[x]` | Create `src/core/intelligence/outcome.ts` — attach P&L to open records | 01 |
+| TI6 | `[x]` | Hook `checkAndAttachOutcomes()` into `src/cli/commands/positions.ts` | 01 |
+| TI7 | `[x]` | Create `src/core/intelligence/seed.ts` — 80 mock records across BTC/ETH/SOL | 01 |
+
+### Phase 02: Pattern Engine + MCP (P1 — parallel with Phase 03)
+
+| # | Status | Task | Phase |
+|---|--------|------|-------|
+| TI8  | `[x]` | Create `src/core/intelligence/engine.ts` — pattern detection + win-rate calc | 02 |
+| TI9  | `[x]` | Create `src/core/intelligence/reputation.ts` — rep score computation | 02 |
+| TI10 | `[x]` | Add `pacifica_intelligence_patterns` MCP tool | 02 |
+| TI11 | `[x]` | Add `pacifica_intelligence_feed` MCP tool | 02 |
+| TI12 | `[x]` | Add `pacifica_intelligence_reputation` MCP tool | 02 |
+| TI13 | `[x]` | Create `src/cli/commands/intelligence.ts` — patterns/reputation/run/seed/serve | 02 |
+
+### Phase 03: Web UI + REST API (P1 — parallel with Phase 02)
+
+| # | Status | Task | Phase |
+|---|--------|------|-------|
+| TI14 | `[x]` | Create `src/intelligence-api/server.ts` — Fastify REST API on :4242 | 03 |
+| TI15 | `[x]` | Implement API routes: /feed, /snapshot/:market, /patterns, /reputation | 03 |
+| TI16 | `[x]` | Scaffold `web/` Next.js 14 app with Tailwind, design tokens | 03 |
+| TI17 | `[x]` | Build Intelligence Feed page (Hero + PatternFeed + WhaleActivity + HighRepSignals) | 03 |
+| TI18 | `[x]` | Build Market Snapshot page (split layout, condition match, agent summary card) | 03 |
+| TI19 | `[x]` | Build Pattern Library page (PatternCard grid) | 03 |
+| TI20 | `[x]` | Build Reputation Ledger page (leaderboard + NFT concept section) | 03 |
+
+### Phase 04 — Elfa Social Intelligence (M12)
+
+| # | Status | Task | Notes |
+|---|--------|------|-------|
+| TI21 | `[x]` | Add `SocialContext`, `SocialSentiment`, `SignalConfidence`, `ConfirmedSignal` to schema.ts | |
+| TI22 | `[x]` | Extend `MarketContext` with optional `social?: SocialContext` | backward-compatible |
+| TI23 | `[x]` | Add `ElfaConfig` to config/types.ts + `elfa?` field in `PacificaConfig` | |
+| TI24 | `[x]` | Create `src/core/intelligence/social.ts` — ElfaClient + `fetchSocialContext()` | 5-min cache |
+| TI25 | `[x]` | Add `scoreConfidence()` to engine.ts | onchain+social combined scoring |
+| TI26 | `[x]` | Add `pacifica_social_context` MCP tool to server.ts | P0 for agent demo |
+| TI27 | `[x]` | Add `/api/intelligence/social/:asset` route to intelligence API server | |
+| TI28 | `[x]` | Create `SocialSignalsPanel` component + wire into web feed page | demo data fallback |
+| TI29 | `[x]` | Create `SocialConfirmationCard` component + wire into snapshot page | |
+| TI30 | `[x]` | Update seed.ts with mock `SocialContext` on seeded records | |
+
+---
+
+## Sprint — M11 Funding Rate Arbitrage Bot
+
+| # | Status | Task | Feature |
+|---|--------|------|---------|
+| T57 | `[x]` | Create feature spec `context/features/m11-funding-arb-bot.md` | M11 |
+| T58 | `[x]` | Builder Code: inject into signer.ts / client.ts / config types | M11 |
+| T59 | `[x]` | Wire Builder Code through init wizard | M11 |
+| T60 | `[x]` | Create `src/core/arb/types.ts` | M11 |
+| T61 | `[x]` | Create `src/core/arb/scanner.ts` + unit tests | M11 |
+| T62 | `[x]` | Create `src/core/arb/external.ts` (Binance/Bybit rate fetchers) | M11 |
+| T63 | `[x]` | Create `src/core/arb/executor.ts` (entry/exit wrappers) | M11 |
+| T64 | `[x]` | Create `src/core/arb/pnl.ts` (funding P&L accounting) | M11 |
+| T65 | `[x]` | Create `src/core/arb/manager.ts` (poll loop + full lifecycle) | M11 |
+| T66 | `[x]` | Arb-specific guardrails in ArbManager.canOpen() | M11 |
+| T67 | `[x]` | Create `src/cli/commands/arb.ts` + register in index.ts | M11 |
+| T68 | `[x]` | Create `src/cli/views/ArbView.tsx` (Ink TUI for arb status) | M11 |
+| T69 | `[x]` | Add 6 MCP tools in server.ts | M11 |
+| T70 | `[x]` | Manager lifecycle tests | M11 |
+| T71 | `[x]` | P&L math tests | M11 |
+| T72 | `[x]` | Update context/ files (ARCHITECTURE, DATA_MODELS, API_CONTRACTS) | M11 |
+| T73 | `[x]` | Update DECISIONS.md, ROADMAP.md, SCOPE.md | M11 |
+| T74 | `[x]` | Add /arb Claude Code skill | M11 |
+| T75 | `[x]` | Demo-path rehearsal | M11 |
 
 ---
 
@@ -154,6 +234,38 @@ Tasks currently being worked on or up next.
 | T18 | Partial take-profit core logic (types, manager, poll loop) | M2 | 2026-03-30 |
 | T42 | 5 analytics MCP tools (journal, pnl_summary, heatmap, risk, smart_orders) | M1 | 2026-03-30 |
 | T43 | 4 write MCP tools (modify_order, trailing_stop, partial_tp, cancel_smart) | M1 | 2026-03-30 |
+| T44 | M10 feature spec, intelligence modules, MCP tools, and CLI integration | M10 | 2026-04-05 |
+| T45 | Context file updates for M10 (APIs, data models, decisions, roadmap) | M10 | 2026-04-05 |
+| T46 | Create `src/core/intelligence/schema.ts` — stable TypeScript interfaces | M10 | 2026-04-05 |
+| T47 | Create `src/core/intelligence/filter.ts` — market filter engine | M10 | 2026-04-05 |
+| T48 | Create `src/core/intelligence/patterns.ts` — trade pattern analyzer | M10 | 2026-04-05 |
+| T49 | Create `src/core/intelligence/alerts.ts` — alert manager + triage | M10 | 2026-04-05 |
+| T50 | Add `pacifica_top_markets` MCP tool to server.ts | M10 | 2026-04-05 |
+| T51 | Add `pacifica_liquidity_scan` MCP tool to server.ts | M10 | 2026-04-05 |
+| T52 | Add `pacifica_trade_patterns` MCP tool to server.ts | M10 | 2026-04-05 |
+| T53 | Add `pacifica_alert_triage` + `pacifica_market_snapshot` MCP tools | M10 | 2026-04-05 |
+| T54 | Create `src/cli/commands/alerts.ts` + register in index.ts | M10 | 2026-04-05 |
+| T55 | Update `src/cli/commands/scan.tsx` — add --gainers/--losers/--min-volume/--json | M10 | 2026-04-05 |
+| T56 | Create `.claude/commands/intelligence.md` agent recipe skill | M10 | 2026-04-05 |
+| T57 | Create feature spec `context/features/m11-funding-arb-bot.md` | M11 | 2026-04-12 |
+| T58 | Builder Code: inject into signer.ts / client.ts / config types | M11 | 2026-04-12 |
+| T59 | Wire Builder Code through init wizard | M11 | 2026-04-12 |
+| T60 | Create `src/core/arb/types.ts` | M11 | 2026-04-12 |
+| T61 | Create `src/core/arb/scanner.ts` + unit tests | M11 | 2026-04-12 |
+| T62 | Create `src/core/arb/external.ts` (Binance/Bybit rate fetchers) | M11 | 2026-04-12 |
+| T63 | Create `src/core/arb/executor.ts` (entry/exit wrappers) | M11 | 2026-04-12 |
+| T64 | Create `src/core/arb/pnl.ts` (funding P&L accounting) | M11 | 2026-04-12 |
+| T65 | Create `src/core/arb/manager.ts` (poll loop + full lifecycle) | M11 | 2026-04-12 |
+| T66 | Arb-specific guardrails in ArbManager.canOpen() | M11 | 2026-04-12 |
+| T67 | Create `src/cli/commands/arb.ts` + register in index.ts | M11 | 2026-04-12 |
+| T68 | Create `src/cli/views/ArbView.tsx` (Ink TUI for arb status) | M11 | 2026-04-12 |
+| T69 | Add 6 MCP tools in server.ts | M11 | 2026-04-12 |
+| T70 | Manager lifecycle tests | M11 | 2026-04-12 |
+| T71 | P&L math tests | M11 | 2026-04-12 |
+| T72 | Update context/ files (ARCHITECTURE, DATA_MODELS, API_CONTRACTS) | M11 | 2026-04-13 |
+| T73 | Update DECISIONS.md, ROADMAP.md, SCOPE.md | M11 | 2026-04-13 |
+| T74 | Add /arb Claude Code skill | M11 | 2026-04-13 |
+| T75 | Demo-path rehearsal (arb scan, intelligence patterns, funding, heatmap) | M11 | 2026-04-13 |
 
 ---
 

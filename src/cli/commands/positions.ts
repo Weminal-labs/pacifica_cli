@@ -22,6 +22,7 @@ import {
   formatAmount,
   formatTimestamp,
 } from "../theme.js";
+import { checkAndAttachOutcomes } from "../../core/intelligence/outcome.js";
 
 // ---------------------------------------------------------------------------
 // Command factory
@@ -57,6 +58,9 @@ async function listPositions(
   const network = globalOpts.testnet ? "testnet" as const : config.network;
   const signer = createSignerFromConfig(config);
   const client = new PacificaClient({ network, signer });
+
+  // Non-blocking outcome attachment — never surfaces errors to the user
+  checkAndAttachOutcomes(client, config).catch(() => {});
 
   try {
     const [positions, markets] = await Promise.all([

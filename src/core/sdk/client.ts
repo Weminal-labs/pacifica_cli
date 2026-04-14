@@ -38,6 +38,8 @@ import {
 export interface ClientConfig {
   network: "testnet" | "mainnet";
   signer?: SignerConfig; // Optional -- not needed for public endpoints
+  /** Builder code to include in all signed order payloads. */
+  builderCode?: string;
 }
 
 const BASE_URLS = {
@@ -193,7 +195,12 @@ export class PacificaClient {
 
   constructor(config: ClientConfig) {
     this.baseUrl = BASE_URLS[config.network];
-    this.signer = config.signer;
+    // Attach builder code to the signer so it flows into every signed request.
+    if (config.signer && config.builderCode) {
+      this.signer = { ...config.signer, builderCode: config.builderCode };
+    } else {
+      this.signer = config.signer;
+    }
 
     // Credit quota depends on whether we have an API key (signer).
     const credits = config.signer ? 300 : 125;

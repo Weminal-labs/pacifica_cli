@@ -9,7 +9,7 @@
 import { input, select, confirm, number } from "@inquirer/prompts";
 import { saveConfig, configExists, getConfigPath } from "../../core/config/loader.js";
 import { DEFAULT_CONFIG } from "../../core/config/types.js";
-import type { PacificaConfig } from "../../core/config/types.js";
+import type { PacificaConfig, ArbConfig } from "../../core/config/types.js";
 import { PacificaClient } from "../../core/sdk/client.js";
 import { createSigner } from "../../core/sdk/signer.js";
 import { PacificaWebSocket } from "../../core/sdk/websocket.js";
@@ -177,6 +177,27 @@ async function runWizard(options: { testnet?: boolean }): Promise<void> {
   client.destroy();
   console.log();
 
+  // -- Builder Code (optional) --------------------------------------------
+  const hasBuilderCode = await confirm({
+    message: "Do you have a Pacifica builder code? (earns fees on your orders)",
+    default: false,
+  });
+
+  let builderCode: string | undefined;
+  if (hasBuilderCode) {
+    const rawCode = await input({
+      message: "Builder code (alphanumeric, max 16 chars):",
+      validate: (value) => {
+        if (!value) return "Builder code cannot be empty";
+        if (!/^[a-zA-Z0-9]{1,16}$/.test(value)) return "Must be alphanumeric, max 16 chars";
+        return true;
+      },
+    });
+    builderCode = rawCode;
+    console.log(`  Builder code: ${theme.emphasis(builderCode)}`);
+  }
+  console.log();
+
   // -- Step 4/5: Trading Defaults ------------------------------------------
   console.log(theme.label("[4/5] Trading Defaults"));
 
@@ -275,6 +296,7 @@ async function runWizard(options: { testnet?: boolean }): Promise<void> {
   const config: PacificaConfig = {
     network,
     private_key: privateKey,
+    ...(builderCode ? { builder_code: builderCode } : {}),
     defaults: {
       leverage,
       slippage,
@@ -290,6 +312,7 @@ async function runWizard(options: { testnet?: boolean }): Promise<void> {
       blocked_actions: DEFAULT_CONFIG.agent.blocked_actions,
       require_confirmation_above: requireConfirmationAbove,
     },
+    arb: DEFAULT_CONFIG.arb,
   };
 
   await saveConfig(config);
@@ -306,6 +329,9 @@ async function runWizard(options: { testnet?: boolean }): Promise<void> {
   console.log(`  Wallet:     ${abbreviateKey(publicKey)}`);
   console.log(`  Leverage:   ${leverage}x`);
   console.log(`  Agent:      ${agentSummary}`);
+  if (builderCode) {
+    console.log(`  Builder:    ${builderCode}`);
+  }
   console.log();
   console.log(theme.muted(`  Config saved to: ${configPath}`));
   console.log();

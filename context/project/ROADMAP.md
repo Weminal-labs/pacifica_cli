@@ -54,12 +54,90 @@
 - Advanced position analytics
 - npm publish + GitHub Releases with prebuilt binaries
 
-## M10 — Agent-Readable Market Intelligence (Post-Hackathon P1)
+## M10 — Agent-Readable Market Intelligence
+
+**Status:** `complete` (2026-04-05)
 
 | Task | Description |
 |------|-------------|
-| Intelligence core | filter.ts, patterns.ts, alerts.ts, schema.ts |
-| 5 new MCP tools | top_markets, liquidity_scan, trade_patterns, alert_triage, market_snapshot |
-| CLI: alerts command | pacifica alerts list/add/remove/check |
-| CLI: scan enhancements | --gainers, --losers, --min-volume, --json |
-| Agent recipes | Documented tool chains for common analysis |
+| Intelligence core | filter.ts, patterns.ts, alerts.ts, schema.ts — DONE |
+| 5 new MCP tools | top_markets, liquidity_scan, trade_patterns, alert_triage, market_snapshot — DONE |
+| CLI: alerts command | pacifica alerts list/add/remove/check — DONE |
+| CLI: scan enhancements | --gainers, --losers, --min-volume, --json — DONE |
+| Agent recipes | Documented tool chains for common analysis — DONE |
+
+---
+
+## M11 — Pacifica Intelligence Layer
+
+**Status:** `planning` (2026-04-12)
+**Spec:** `context/features/m11-intelligence-layer.md`
+**Plan:** `plans/20260412-1514-m11-intelligence-layer/`
+
+The second-order intelligence layer. Trades = signals. Outcomes = verification.
+Patterns emerge from collective behavior. Zero friction for traders.
+
+### Phase 1 — Capture Layer (Hackathon P0)
+
+| Task | ID | Description |
+|------|----|-------------|
+| Extend schema.ts | T57 | Add IntelligenceRecord, MarketContext, TradeOutcome types |
+| Build store.ts | T58 | Append-only JSON store for intelligence records |
+| Build capture.ts | T59 | Market context snapshot at trade execution |
+| Hook into trade.tsx | T60 | Silent capture after trade, non-blocking |
+| Build outcome.ts | T61 | Attach P&L when position closes |
+| Hook into positions.tsx | T62 | Trigger outcome attachment on position check |
+| Build seed.ts | T63 | 80 mock records for demo (dev-only) |
+
+### Phase 2 — Pattern Engine + MCP (Hackathon P1)
+
+| Task | ID | Description |
+|------|----|-------------|
+| Build engine.ts | T64 | Pattern detection: win-rate calc, threshold verification |
+| Build reputation.ts | T65 | Rep score from accuracy-by-condition |
+| MCP: intelligence_patterns | T66 | Matches current market to verified patterns |
+| MCP: intelligence_feed | T67 | Live feed: patterns + whale alerts + rep signals |
+| MCP: intelligence_reputation | T68 | Anonymized leaderboard |
+| CLI: pacifica intelligence | T69 | patterns / reputation / run / seed subcommands |
+
+### Phase 3 — Web UI + REST API (Hackathon P1)
+
+| Task | ID | Description |
+|------|----|-------------|
+| REST API server | T70 | Fastify on :4242, CORS for localhost:3000 |
+| API routes | T71 | /feed, /snapshot/:market, /patterns, /reputation |
+| Next.js scaffold | T72 | web/ directory, Tailwind, design tokens, shadcn |
+| Intelligence Feed page | T73 | Hero + PatternFeed + WhaleActivity + HighRepSignals |
+| Market Snapshot page | T74 | Split layout, condition match, agent summary |
+| Pattern Library page | T75 | Filter bar + PatternCard grid + detail modal |
+| Reputation Ledger page | T76 | Leaderboard + NFT concept section |
+
+### Phase 4 — Post-Hackathon
+
+| Task | Description |
+|------|-------------|
+| Real cross-trader aggregation | Shared backend or opt-in P2P sync |
+| Reputation weighting | Position-size weighted accuracy |
+| Onchain NFT minting | Base L2, ERC-1155, verified patterns |
+| Privacy/permission layer | Granular opt-in for data contribution |
+| Pattern aging | Decay function for stale patterns |
+| Subscription API | Revenue layer: API key access to intelligence feed |
+
+---
+
+## M11 — Funding Rate Arbitrage Bot
+
+**Status:** `complete` (2026-04-12)
+
+Automated bot that monitors Pacifica funding rates (and optionally Binance/Bybit), detects
+high-APR opportunities, enters positions, monitors until settlement, exits.
+
+| Task | Description |
+|------|-------------|
+| Core arb module | types.ts, scanner.ts, external.ts, executor.ts, pnl.ts, manager.ts — DONE |
+| CLI commands | pacifica arb scan/start/stop/status/list/close/config (7 subcommands) — DONE |
+| Builder code | Integrated into signer.ts, wired through init wizard — DONE |
+| MCP tools | 6 arb tools (scan, positions, pnl, open, close, config) — DONE |
+| Tests | 19 P&L tests + 21 manager lifecycle tests (40 passing) — DONE |
+| Guardrails | Max concurrent, daily loss limit, fee gate, settlement veto — DONE |
+| UAT Status | Pending browser terminal testing (T75) |

@@ -21,6 +21,9 @@
 - PnL journal — auto-logging trades to local JSON
 - Smart orders — trailing stop + partial take-profit
 - Claude Code Skills (5 slash commands)
+- Agent-readable market intelligence (M10 — 5 MCP tools, alerts CLI)
+- Funding rate arbitrage bot (M11 — `pacifica arb` with 7 subcommands, 6 MCP tools)
+- Pacifica Intelligence Layer (M11 — capture, pattern engine, web UI, Elfa social signals)
 
 ### P2 — Only If Day 2 Goes Well
 - Event hooks system (7 event types, YAML config)

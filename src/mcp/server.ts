@@ -25,7 +25,7 @@ import { z } from "zod/v4";
 import { PacificaClient } from "../core/sdk/client.js";
 import { createSignerFromConfig } from "../core/sdk/signer.js";
 import type { Market, OrderSide, TpSlConfig, FundingRate } from "../core/sdk/types.js";
-import { loadConfig } from "../core/config/loader.js";
+import { loadConfig, saveConfig } from "../core/config/loader.js";
 import type { PacificaConfig } from "../core/config/types.js";
 import { GuardrailChecker } from "../core/agent/guardrails.js";
 import { SpendingTracker } from "../core/agent/spending-tracker.js";
@@ -33,6 +33,8 @@ import { AgentActionLogger } from "../core/agent/action-logger.js";
 import { JournalLogger } from "../core/journal/logger.js";
 import { calculateRiskSummary } from "../core/risk/calculator.js";
 import { SmartOrderManager } from "../core/smart/manager.js";
+import { ArbManager } from "../core/arb/manager.js";
+import { buildPnlSummary } from "../core/arb/pnl.js";
 import {
   topGainers, topLosers, byOpenInterest, byFundingRate, byVolume,
   liquidityFilter, computeLiquidityScan, toMarketSummary,
@@ -44,6 +46,10 @@ import { SCHEMA_VERSION } from "../core/intelligence/schema.js";
 import type {
   MarketSummary, LiquidityScan, MarketIntelligenceSnapshot,
 } from "../core/intelligence/schema.js";
+import { loadPatterns, loadRecords, loadReputation } from "../core/intelligence/store.js";
+import type { DetectedPattern, ConfirmedSignal } from "../core/intelligence/schema.js";
+import { fetchSocialContext } from "../core/intelligence/social.js";
+import { scoreConfidence, detectPatterns } from "../core/intelligence/engine.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1712,6 +1718,490 @@ function registerWriteTools(
 }
 
 // ---------------------------------------------------------------------------
+// Arb Tools (6) — funding rate arbitrage bot
+// ---------------------------------------------------------------------------
+
+function registerArbTools(
+  server: McpServer,
+  client: PacificaClient,
+  config: PacificaConfig,
+  guardrails: GuardrailChecker,
+  spendingTracker: SpendingTracker,
+  logger: AgentActionLogger,
+): void {
+  const arbManager = new ArbManager(client, config.arb);
+  arbManager.load();
+
+  // -----------------------------------------------------------------------
+  // pacifica_arb_scan
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_arb_scan",
+    "Scan Pacifica markets for funding rate arbitrage opportunities. Returns ranked list with APR, side (who collects), volume, and cross-exchange divergence (if available).",
+    {
+      min_apr: z.number().optional().describe("Minimum annualized APR threshold (%). Defaults to config value."),
+      include_external: z.boolean().optional().describe("Include Binance/Bybit rate comparison."),
+    },
+    async (params) => {
+      try {
+        const arbConfig = {
+          ...config.arb,
+          ...(params.min_apr !== undefined ? { min_apr_threshold: params.min_apr } : {}),
+          ...(params.include_external !== undefined ? { use_external_rates: params.include_external } : {}),
+        };
+        const mgr = new ArbManager(client, arbConfig);
+        mgr.load();
+        const opportunities = await mgr.scanOpportunities();
+        return ok({ opportunities, count: opportunities.length });
+      } catch (err) {
+        return fail(`Arb scan failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_arb_positions
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_arb_positions",
+    "Get current and historical arb positions with P&L details.",
+    {
+      status: z.enum(["active", "closed", "error", "all"]).optional().default("all").describe("Filter by position status."),
+    },
+    async (params) => {
+      try {
+        const filter = params.status !== "all" ? { status: params.status } : undefined;
+        const positions = arbManager.getPositions(filter);
+        return ok({ positions, count: positions.length });
+      } catch (err) {
+        return fail(`Failed to get arb positions: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_arb_pnl_summary
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_arb_pnl_summary",
+    "Get lifetime P&L summary for the arb bot: total funding collected, fees paid, net profit, win rate.",
+    {},
+    async () => {
+      try {
+        const positions = arbManager.getPositions();
+        const lifetime = arbManager.getLifetimeStats();
+        const summary = buildPnlSummary(positions, lifetime);
+        return ok(summary);
+      } catch (err) {
+        return fail(`Failed to get arb P&L summary: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_arb_open (write — guarded)
+  // -----------------------------------------------------------------------
+  const openToolName = "pacifica_arb_open";
+  server.tool(
+    openToolName,
+    "Open a funding rate arb position on the specified symbol. Requires user approval via guardrails.",
+    {
+      symbol: z.string().describe("Market symbol, e.g. BTC"),
+      size_usd: z.number().positive().optional().describe("Position size in USD. Defaults to config value."),
+    },
+    async (params) => {
+      const guardCheck = guardrails.check({
+        action: "arb_open",
+        orderSizeUsd: params.size_usd ?? config.arb.position_size_usd,
+        leverage: 1,
+      });
+
+      if (!guardCheck.allowed) {
+        await logger.logRejection({
+          tool: openToolName,
+          action: "arb_open",
+          params,
+          rejectionReason: guardCheck.reason ?? "guardrail blocked",
+        });
+        return fail(`Guardrail rejected: ${guardCheck.reason}`);
+      }
+
+      try {
+        const opportunities = await arbManager.scanOpportunities();
+        const opp = opportunities.find(
+          (o) => o.symbol.toUpperCase() === params.symbol.toUpperCase(),
+        );
+        if (!opp) {
+          return fail(`No arb opportunity found for ${params.symbol} at current config thresholds.`);
+        }
+
+        if (!arbManager.canEnter(opp)) {
+          return fail(`Cannot enter: arb guardrails blocked (cooldown, daily limit, or fee ratio).`);
+        }
+
+        // Use the shared arbManager so state (notional cap, cooldowns, positionsOpened) is tracked
+        const result = await arbManager.openPosition(opp);
+
+        if (!result.success) {
+          return fail(`Order failed: ${result.error}`);
+        }
+
+        await spendingTracker.recordSpend(config.arb.position_size_usd, "arb_open", params.symbol.toUpperCase());
+
+        return ok({
+          success: true,
+          positionId: result.positionId,
+          symbol: params.symbol.toUpperCase(),
+          side: opp.side,
+          notionalUsd: config.arb.position_size_usd,
+          entryApr: opp.annualizedApr,
+          message: "Arb position opened. Use pacifica_arb_positions to monitor.",
+        });
+      } catch (err) {
+        return fail(`Arb open failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_arb_close (write — guarded)
+  // -----------------------------------------------------------------------
+  const closeToolName = "pacifica_arb_close";
+  server.tool(
+    closeToolName,
+    "Close an active arb position by ID.",
+    {
+      position_id: z.string().describe("Position ID from pacifica_arb_positions."),
+    },
+    async (params) => {
+      const guardCheck = guardrails.check({ action: "arb_close" });
+
+      if (!guardCheck.allowed) {
+        await logger.logRejection({
+          tool: closeToolName,
+          action: "arb_close",
+          params,
+          rejectionReason: guardCheck.reason ?? "guardrail blocked",
+        });
+        return fail(`Guardrail rejected: ${guardCheck.reason}`);
+      }
+
+      try {
+        const result = await arbManager.closePosition(params.position_id);
+        if (result.success) {
+          return ok({ success: true, positionId: params.position_id });
+        }
+        return fail(`Close failed: ${result.error}`);
+      } catch (err) {
+        return fail(`Arb close failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_arb_configure (write — guarded)
+  // -----------------------------------------------------------------------
+  const configToolName = "pacifica_arb_configure";
+  server.tool(
+    configToolName,
+    "Update arb bot configuration. Changes take effect on the next poll cycle.",
+    {
+      enabled: z.boolean().optional().describe("Enable or disable the arb bot."),
+      min_apr_threshold: z.number().positive().optional().describe("Minimum APR % to enter."),
+      position_size_usd: z.number().positive().optional().describe("Position size in USD."),
+      max_concurrent_positions: z.number().int().positive().optional().describe("Max concurrent positions."),
+      exit_policy: z.enum(["settlement", "rate_inverted", "apr_below", "pnl_target"]).optional().describe("Exit policy."),
+    },
+    async (params) => {
+      const guardCheck = guardrails.check({ action: "arb_configure" });
+
+      if (!guardCheck.allowed) {
+        await logger.logRejection({
+          tool: configToolName,
+          action: "arb_configure",
+          params,
+          rejectionReason: guardCheck.reason ?? "guardrail blocked",
+        });
+        return fail(`Guardrail rejected: ${guardCheck.reason}`);
+      }
+
+      try {
+        const cfg = await loadConfig();
+        if (params.enabled !== undefined) cfg.arb.enabled = params.enabled;
+        if (params.min_apr_threshold !== undefined) cfg.arb.min_apr_threshold = params.min_apr_threshold;
+        if (params.position_size_usd !== undefined) cfg.arb.position_size_usd = params.position_size_usd;
+        if (params.max_concurrent_positions !== undefined) cfg.arb.max_concurrent_positions = params.max_concurrent_positions;
+        if (params.exit_policy !== undefined) cfg.arb.exit_policy = params.exit_policy;
+        await saveConfig(cfg);
+        return ok({ success: true, arb: cfg.arb });
+      } catch (err) {
+        return fail(`Config update failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// M11 Intelligence Tools (3) — patterns, feed, reputation
+// ---------------------------------------------------------------------------
+
+function registerM11IntelligenceTools(
+  server: McpServer,
+  client: PacificaClient,
+): void {
+  // -----------------------------------------------------------------------
+  // pacifica_intelligence_patterns
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_intelligence_patterns",
+    "Get verified market patterns and check if current conditions match any of them",
+    {
+      market: z.string().optional().describe("Optional market symbol to check current conditions against (e.g. BTC, ETH)"),
+      min_win_rate: z.number().optional().describe("Minimum win rate filter (0–1, default 0.6)"),
+      min_sample_size: z.number().optional().describe("Minimum sample size filter (default 20)"),
+    },
+    async ({ market, min_win_rate, min_sample_size }) => {
+      try {
+        const allPatterns = await loadPatterns();
+        const minWr = min_win_rate ?? 0.6;
+        const minSample = min_sample_size ?? 20;
+
+        const verified = allPatterns.filter(
+          (p) => p.win_rate >= minWr && p.sample_size >= minSample,
+        );
+
+        let matching_patterns: DetectedPattern[] = [];
+
+        if (market !== undefined) {
+          const markets = await client.getMarkets();
+          const upper = market.toUpperCase();
+          const found = markets.find(
+            (m) => m.symbol.toUpperCase() === upper ||
+                   m.symbol.toUpperCase().startsWith(upper + "-"),
+          );
+
+          if (found) {
+            // Build a basic MarketContext-like lookup from live market data
+            const liveCtx: Record<string, number> = {
+              funding_rate: found.fundingRate,
+              oi_change_4h_pct: 0, // unavailable in a single snapshot
+              buy_pressure: 0.5,   // unavailable without trade data
+              momentum_value: 0,   // unavailable without trade data
+              large_orders_count: 0,
+            };
+
+            matching_patterns = verified.filter((p) =>
+              p.conditions.every((cond) => {
+                const val = liveCtx[cond.axis];
+                if (val === undefined) return false;
+                const numVal = cond.value as number;
+                switch (cond.op) {
+                  case "lt":  return val < numVal;
+                  case "gt":  return val > numVal;
+                  case "lte": return val <= numVal;
+                  case "gte": return val >= numVal;
+                  case "eq":  return val === numVal;
+                  default:    return false;
+                }
+              }),
+            );
+          }
+        }
+
+        return ok({
+          matching_patterns,
+          all_verified_patterns: verified,
+          total: allPatterns.length,
+        });
+      } catch (err) {
+        return fail(`Error loading intelligence patterns: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_intelligence_feed
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_intelligence_feed",
+    "Get live intelligence feed: active verified patterns, whale activity, and signals from high-reputation traders",
+    {
+      limit: z.number().int().positive().optional().describe("Max number of whale activity and signal items to return (default 20)"),
+    },
+    async ({ limit }) => {
+      try {
+        const [records, patterns, repMap] = await Promise.all([
+          loadRecords(),
+          loadPatterns(),
+          loadReputation(),
+        ]);
+
+        const effectiveLimit = limit ?? 20;
+
+        const active_patterns = patterns.filter((p) => p.verified);
+
+        // Whale activity: records with large_orders_count >= 3, most recent first
+        const whale_activity = records
+          .filter((r) => r.market_context.large_orders_count >= 3)
+          .sort((a, b) => b.opened_at.localeCompare(a.opened_at))
+          .slice(0, effectiveLimit)
+          .map((r) => ({
+            asset: r.asset,
+            direction: r.direction,
+            size_usd: r.size_usd,
+            large_orders_count: r.market_context.large_orders_count,
+            opened_at: r.opened_at,
+          }));
+
+        // High-rep signals: open records (no closed_at) where trader rep > 70
+        const high_rep_signals = records
+          .filter((r) => r.closed_at === undefined)
+          .filter((r) => {
+            const rep = repMap.get(r.trader_id);
+            return rep !== undefined && rep.overall_rep_score > 70;
+          })
+          .sort((a, b) => b.opened_at.localeCompare(a.opened_at))
+          .slice(0, effectiveLimit)
+          .map((r) => ({
+            asset: r.asset,
+            direction: r.direction,
+            size_usd: r.size_usd,
+            rep_score: repMap.get(r.trader_id)!.overall_rep_score,
+            opened_at: r.opened_at,
+          }));
+
+        return ok({
+          active_patterns,
+          whale_activity,
+          high_rep_signals,
+          generated_at: new Date().toISOString(),
+        });
+      } catch (err) {
+        return fail(`Error loading intelligence feed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_intelligence_reputation
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_intelligence_reputation",
+    "Get anonymised trader reputation leaderboard ranked by accuracy",
+    {
+      limit: z.number().int().positive().optional().describe("Number of traders to return (default 10)"),
+      sort_by: z.enum(["overall_rep_score", "win_rate", "total_trades"]).optional().describe("Sort field (default overall_rep_score)"),
+    },
+    async ({ limit, sort_by }) => {
+      try {
+        const repMap = await loadReputation();
+        const effectiveLimit = limit ?? 10;
+        const sortField = sort_by ?? "overall_rep_score";
+
+        const arr = Array.from(repMap.values());
+
+        arr.sort((a, b) => {
+          switch (sortField) {
+            case "win_rate":     return b.overall_win_rate - a.overall_win_rate;
+            case "total_trades": return b.total_trades - a.total_trades;
+            default:             return b.overall_rep_score - a.overall_rep_score;
+          }
+        });
+
+        const leaderboard = arr.slice(0, effectiveLimit).map((r) => ({
+          ...r,
+          trader_id: r.trader_id.slice(0, 12),
+        }));
+
+        return ok({
+          leaderboard,
+          total_traders: repMap.size,
+        });
+      } catch (err) {
+        return fail(`Error loading reputation leaderboard: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// M12 Social Intelligence Tool (1) — pacifica_social_context
+// ---------------------------------------------------------------------------
+
+function registerSocialIntelligenceTool(
+  server: McpServer,
+  client: PacificaClient,
+  config: PacificaConfig,
+): void {
+  server.tool(
+    "pacifica_social_context",
+    "Get Elfa social intelligence for an asset: mention velocity, smart-follower sentiment, trending narratives, and optionally combined signal confidence vs onchain patterns. Requires elfa.api_key in .pacifica.yaml.",
+    {
+      asset: z.string().describe("Asset ticker, e.g. ETH, BTC, SOL (or full symbol like ETH-USDC-PERP)"),
+      include_pattern_match: z.boolean().optional().describe("If true, load current verified patterns and score combined onchain+social confidence for each"),
+    },
+    async ({ asset, include_pattern_match }) => {
+      try {
+        const elfaKey = config.elfa?.api_key;
+        if (!elfaKey) {
+          return fail(
+            "Elfa API key not configured. Add `elfa:\\n  api_key: your-key` to ~/.pacifica.yaml to enable social intelligence.",
+          );
+        }
+
+        const ticker = asset.toUpperCase().split("-")[0] ?? asset.toUpperCase();
+        const social = await fetchSocialContext(ticker, elfaKey, config.elfa?.cache_ttl_minutes);
+
+        if (!social) {
+          return fail(`Failed to fetch social context for ${ticker} from Elfa API.`);
+        }
+
+        const result: Record<string, unknown> = { asset: ticker, social };
+
+        if (include_pattern_match) {
+          try {
+            const patterns = await loadPatterns();
+
+            if (patterns.length > 0) {
+              const confirmedSignals: ConfirmedSignal[] = patterns.map((p) => {
+                const { confidence, reason } = scoreConfidence(p, social);
+                return {
+                  pattern: p,
+                  social,
+                  confidence,
+                  confidence_reason: reason,
+                };
+              });
+
+              // Sort: high → medium → low → unconfirmed
+              const ORDER: ConfirmedSignal["confidence"][] = ["high", "medium", "low", "unconfirmed"];
+              confirmedSignals.sort(
+                (a, b) => ORDER.indexOf(a.confidence) - ORDER.indexOf(b.confidence),
+              );
+
+              result.confirmed_signals = confirmedSignals;
+              result.best_signal = confirmedSignals[0] ?? null;
+            } else {
+              result.confirmed_signals = [];
+              result.best_signal = null;
+              result.note = "No verified patterns found. Run `pacifica intelligence run` to detect patterns from your trade history.";
+            }
+          } catch {
+            // Pattern matching is best-effort — don't fail the tool
+            result.confirmed_signals = [];
+            result.best_signal = null;
+          }
+        }
+
+        return ok(result);
+      } catch (err) {
+        return fail(`Social context error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
 
@@ -1721,7 +2211,7 @@ async function main(): Promise<void> {
   // -----------------------------------------------------------------------
   const config = await loadConfig();
   const signer = createSignerFromConfig(config);
-  const client = new PacificaClient({ network: config.network, signer });
+  const client = new PacificaClient({ network: config.network, signer, builderCode: config.builder_code });
 
   // -----------------------------------------------------------------------
   // 2. Initialize agent safety modules
@@ -1757,7 +2247,10 @@ async function main(): Promise<void> {
   registerAnalyticsTools(server, client, journalLogger, smartManager);
   registerFundingTools(server, client);
   registerIntelligenceTools(server, client, alertManager);
+  registerM11IntelligenceTools(server, client);
+  registerSocialIntelligenceTool(server, client, config);
   registerWriteTools(server, client, config, guardrails, spendingTracker, logger, smartManager);
+  registerArbTools(server, client, config, guardrails, spendingTracker, logger);
 
   // -----------------------------------------------------------------------
   // 4. Connect transport and start serving

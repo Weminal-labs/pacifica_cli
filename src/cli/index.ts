@@ -79,8 +79,15 @@ async function registerCommands(): Promise<void> {
   const { createAlertsCommand } = await import("./commands/alerts.js");
   const alertsCmd = createAlertsCommand();
 
+  const { createArbCommand } = await import("./commands/arb.js");
+  const arbCmd = createArbCommand();
+
+  const { createIntelligenceCommand } = await import("./commands/intelligence.js");
+  const intelligenceCmd = createIntelligenceCommand();
+
   program.addCommand(initCmd);
   program.addCommand(scanCmd);
+  program.addCommand(arbCmd);
   program.addCommand(tradeCmd);
   program.addCommand(ordersCmd);
   program.addCommand(positionsCmd);
@@ -90,6 +97,7 @@ async function registerCommands(): Promise<void> {
   program.addCommand(fundingCmd);
   program.addCommand(smartCmd);
   program.addCommand(alertsCmd);
+  program.addCommand(intelligenceCmd);
 }
 
 // ---------------------------------------------------------------------------
