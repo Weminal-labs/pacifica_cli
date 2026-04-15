@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Red_Hat_Display } from "next/font/google";
 import "./globals.css";
+import { WalletButton } from "./_components/WalletButton";
+import { NavDropdown } from "./_components/NavDropdown";
 
 const redHat = Red_Hat_Display({
   variable: "--font-red-hat",
@@ -30,15 +32,37 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
             {/* Nav links */}
             <nav className="flex items-center gap-6 text-sm text-neutral-400 font-medium">
-              <a href="/"           className="hover:text-white transition-colors">Feed</a>
-              <a href="/patterns"   className="hover:text-white transition-colors">Patterns</a>
-              <a href="/reputation" className="hover:text-white transition-colors">Reputation</a>
+              <NavDropdown
+                label="Intel"
+                items={[
+                  { label: "Feed",     href: "/",         description: "Live market signals" },
+                  { label: "Patterns", href: "/patterns", description: "Verified trade patterns" },
+                  { label: "Watch",    href: "/watch",    description: "Monitor markets" },
+                ]}
+              />
+              <NavDropdown
+                label="Traders"
+                items={[
+                  { label: "Reputation",  href: "/reputation",  description: "On-chain rep scores" },
+                  { label: "Leaderboard", href: "/leaderboard", description: "Top PnL traders" },
+                ]}
+              />
+              <NavDropdown
+                label="Tools"
+                items={[
+                  { label: "Simulate", href: "/simulate", description: "Risk simulator" },
+                  { label: "Copy",     href: "/copy",     description: "Copy top traders" },
+                  { label: "Guide",    href: "/guide",    description: "How to use the dashboard" },
+                  { label: "Install CLI", href: "/install", description: "Get the trading terminal" },
+                ]}
+              />
               <a
-                href="/snapshot/ETH"
+                href="/snapshot"
                 className="text-black bg-orange-500 px-3 py-1 text-xs font-semibold hover:bg-orange-400 transition-colors rounded-sm"
               >
-                Snapshot →
+                Scanner →
               </a>
+              <WalletButton />
             </nav>
           </div>
         </header>
