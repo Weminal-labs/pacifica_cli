@@ -174,6 +174,76 @@ Tasks currently being worked on or up next.
 
 ---
 
+## Sprint — M12 Pacifica DEX Integration
+
+### Phase A — Live Data Wiring
+
+| # | Status | Task | Notes |
+|---|--------|------|-------|
+| T76 | `[ ]` | Add `src/intelligence-api/pacifica-client.ts` — GET-only fetch wrapper for test-api.pacifica.fi with 4s timeout and error normalization | |
+| T77 | `[ ]` | Add `src/intelligence-api/cache.ts` — in-memory TTL cache (Map-based, per-endpoint TTLs) | |
+| T78 | `[ ]` | Add GET /api/pacifica/account/:address route to intelligence-api/server.ts | |
+| T79 | `[ ]` | Add GET /api/pacifica/subaccounts/:address route | |
+| T80 | `[ ]` | Add GET /api/pacifica/positions/:address route (fans out to all subaccounts in parallel) | |
+
+### Phase B — Portfolio Redesign
+
+| # | Status | Task | Notes |
+|---|--------|------|-------|
+| T81 | `[ ]` | Build composite GET /api/portfolio/:address endpoint with intelligence overlay join (patterns, rep, funding) | |
+| T82 | `[ ]` | Add SWR to web deps and create web/hooks/useUserPortfolio.ts | |
+| T83 | `[ ]` | Build PositionCard component with PatternMatchLine, RepSignalLine, FundingWatchLine | |
+| T84 | `[ ]` | Build EquityStrip and AccountTabs components | |
+| T85 | `[ ]` | Rewrite web/app/portfolio/page.tsx using composite endpoint and new components | |
+| T86 | `[ ]` | Build useSubaccountLabels hook (localStorage for custom subaccount names) | |
+
+### Phase C — Signal → Trade Deep Links
+
+| # | Status | Task | Notes |
+|---|--------|------|-------|
+| T87 | `[ ]` | Add "Trade on Pacifica →" deep-link buttons on PositionCard, snapshot page, pattern cards | |
+| T88 | `[ ]` | Verify actual deep-link URL params supported by app.pacifica.fi | |
+
+### Phase D — Subaccount Intelligence Polish
+
+| # | Status | Task | Notes |
+|---|--------|------|-------|
+| T89 | `[ ]` | Subaccount performance comparison view (/portfolio?view=compare) | |
+| T90 | `[ ]` | Copy pass on subaccount-aware overlay messaging | |
+
+### Phase E — Additional Signal Surfaces
+
+| # | Status | Task | Notes |
+|---|--------|------|-------|
+| T91 | `[ ]` | Drill-down slide-over for "N high-rep traders long ETH" → trader list | |
+| T92 | `[ ]` | /watchlist page for starred markets with active patterns | |
+| T93 | `[ ]` | Funding-flip toast when portfolio poll detects adverse funding change | |
+
+### Phase F — Stretch: Signed Writes
+
+| # | Status | Task | Notes |
+|---|--------|------|-------|
+| T94 | `[ ]` | Ed25519 signing in browser via Privy signMessage() for create-subaccount flow | |
+| T95 | `[ ]` | POST /api/pacifica/subaccount/create proxy route in 4242 | |
+| T96 | `[ ]` | "Create subaccount from intelligence" modal UI | |
+
+---
+
+## Sprint — M12 Simulate + Backtest Redesign
+
+| # | Status | Task | Feature |
+|---|--------|------|---------|
+| T97 | `[x]` | Create feature spec m12-simulate-backtest.md | M12 |
+| T98 | `[~]` | Refactor: extract SimulateForm.tsx + _lib/simulate.ts + _lib/volatility.ts | M12 |
+| T99 | `[ ]` | Build web/lib/pacifica-public.ts + auto-fetch funding/price into form | M12 |
+| T100 | `[ ]` | Build useCandles hook + PriceChart SVG (7d, liquidation + entry overlays) | M12 |
+| T101 | `[ ]` | Build VolatilityScenarios (±1σ/2σ/3σ from realised vol) | M12 |
+| T102 | `[ ]` | Build usePattern hook + PatternBacktestPanel (OutcomeStrip + DistributionCurve) | M12 |
+| T103 | `[ ]` | Build ConditionsTally + web/lib/conditions.ts shared helpers | M12 |
+| T104 | `[ ]` | Wire "Simulate this pattern →" on /patterns/[id] page | M12 |
+
+---
+
 ## Deferred (P2 / Post-Hackathon)
 
 | # | Status | Task | Feature | Notes |
