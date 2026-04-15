@@ -305,6 +305,7 @@ async function runWizard(options: { testnet?: boolean }): Promise<void> {
     },
     agent: {
       enabled: agentEnabled,
+      autonomy_level: DEFAULT_CONFIG.agent.autonomy_level,
       daily_spending_limit: dailySpendingLimit,
       max_order_size: maxOrderSize,
       max_leverage: leverage,

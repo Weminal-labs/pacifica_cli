@@ -7,12 +7,129 @@
 // `pacifica alerts check [--all] [--json]`          Check alerts vs live data
 // ---------------------------------------------------------------------------
 
+import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { Command } from "commander";
 import { loadConfig } from "../../core/config/loader.js";
 import { PacificaClient } from "../../core/sdk/client.js";
 import { AlertManager } from "../../core/intelligence/alerts.js";
 import type { AlertType } from "../../core/intelligence/schema.js";
 import { theme, formatPrice } from "../theme.js";
+
+// ---------------------------------------------------------------------------
+// Daemon PID helpers
+// ---------------------------------------------------------------------------
+
+const PACIFICA_DIR  = join(homedir(), ".pacifica");
+const DAEMON_PID    = join(PACIFICA_DIR, "alerts-daemon.pid");
+
+async function readDaemonPid(): Promise<number | null> {
+  try {
+    const raw = await readFile(DAEMON_PID, "utf-8");
+    const pid = parseInt(raw.trim(), 10);
+    if (isNaN(pid)) return null;
+    process.kill(pid, 0); // throws ESRCH if not running
+    return pid;
+  } catch {
+    return null;
+  }
+}
+
+async function writeDaemonPid(pid: number): Promise<void> {
+  if (!existsSync(PACIFICA_DIR)) {
+    await mkdir(PACIFICA_DIR, { recursive: true });
+  }
+  await writeFile(DAEMON_PID, String(pid), { encoding: "utf-8", mode: 0o600 });
+}
+
+async function removeDaemonPid(): Promise<void> {
+  try { await unlink(DAEMON_PID); } catch { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// Daemon polling loop (runs in-process; user can background with shell & or tmux)
+// ---------------------------------------------------------------------------
+
+async function runDaemonLoop(intervalSecs: number): Promise<void> {
+  const config = await loadConfig();
+  const manager = new AlertManager();
+  const notified = new Set<string>(); // alert IDs already bell'd this session
+
+  const list = await manager.listAlerts();
+  if (list.length === 0) {
+    console.log(theme.muted("  No alerts configured. Use 'pacifica alerts add' to add one."));
+    return;
+  }
+
+  console.log();
+  console.log(theme.header("  Pacifica Alert Daemon"));
+  console.log(
+    theme.muted(`  Monitoring ${list.length} alert${list.length !== 1 ? "s" : ""}`) +
+    theme.muted(`  —  ${intervalSecs}s interval  —  Ctrl+C to stop`),
+  );
+  console.log();
+
+  await writeDaemonPid(process.pid);
+
+  const poll = async () => {
+    try {
+      const client = new PacificaClient({ network: config.network });
+      try {
+        const markets = await client.getMarkets();
+        const results = await manager.checkAlerts(markets, new Map());
+        const now = new Date().toLocaleTimeString("en-US", { hour12: false });
+
+        for (const r of results) {
+          if (r.urgency === "triggered" && !notified.has(r.alert.id)) {
+            notified.add(r.alert.id);
+            const sym  = r.alert.symbol;
+            const type = r.alert.type;
+            const thr  = formatThreshold(r.alert.type, r.alert.threshold);
+            const cur  = r.currentValue > 0
+              ? theme.muted(`  (current: ${formatCurrentValue(r.alert.type, r.currentValue)})`)
+              : "";
+            process.stdout.write("\x07"); // terminal bell
+            console.log(
+              `  [${now}] ` +
+              theme.loss("⚡ TRIGGERED: ") +
+              theme.emphasis(`${sym} ${type} ${thr}`) +
+              cur,
+            );
+          } else if (r.urgency !== "triggered") {
+            // Allow re-triggering if condition clears and re-occurs
+            notified.delete(r.alert.id);
+          }
+        }
+      } finally {
+        client.destroy();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const ts  = new Date().toLocaleTimeString("en-US", { hour12: false });
+      console.error(theme.error(`  [${ts}] poll error: ${msg}`));
+    }
+  };
+
+  // Immediate first poll
+  await poll();
+
+  const timer = setInterval(() => { void poll(); }, intervalSecs * 1_000);
+
+  const shutdown = async () => {
+    clearInterval(timer);
+    await removeDaemonPid();
+    console.log(theme.muted("\n  Alert daemon stopped."));
+    process.exit(0);
+  };
+
+  process.on("SIGINT",  () => { void shutdown(); });
+  process.on("SIGTERM", () => { void shutdown(); });
+
+  // Keep the process alive indefinitely
+  await new Promise<never>(() => { /* intentionally never resolves */ });
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -384,6 +501,82 @@ export function createAlertsCommand(): Command {
         client?.destroy();
       }
     });
+
+  // -------------------------------------------------------------------------
+  // pacifica alerts daemon <start|stop|status>
+  // -------------------------------------------------------------------------
+
+  const daemon = new Command("daemon")
+    .description("Manage the background alert monitoring daemon");
+
+  daemon
+    .command("start")
+    .description("Start the alert daemon (polls every <interval> seconds)")
+    .option("--interval <s>", "Poll interval in seconds", "30")
+    .action(async (opts: { interval: string }) => {
+      try {
+        const existing = await readDaemonPid();
+        if (existing !== null) {
+          console.log(theme.warning(`  Daemon already running (PID ${existing}).`));
+          console.log(theme.muted("  Use 'pacifica alerts daemon stop' to stop it."));
+          return;
+        }
+
+        const intervalSecs = Math.max(5, parseInt(opts.interval, 10) || 30);
+        await runDaemonLoop(intervalSecs);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(theme.error(`\nError: ${message}\n`));
+        process.exitCode = 1;
+      }
+    });
+
+  daemon
+    .command("stop")
+    .description("Stop the alert daemon")
+    .action(async () => {
+      try {
+        const pid = await readDaemonPid();
+        if (pid === null) {
+          console.log(theme.muted("  No daemon is running."));
+          return;
+        }
+        process.kill(pid, "SIGTERM");
+        await removeDaemonPid();
+        console.log(theme.success(`  Alert daemon stopped (PID ${pid}).`));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(theme.error(`\nError: ${message}\n`));
+        process.exitCode = 1;
+      }
+    });
+
+  daemon
+    .command("status")
+    .description("Show whether the alert daemon is running")
+    .action(async () => {
+      try {
+        const pid = await readDaemonPid();
+        if (pid === null) {
+          console.log(theme.muted("  Alert daemon is not running."));
+          console.log(theme.muted("  Start it with: pacifica alerts daemon start"));
+        } else {
+          const manager = new AlertManager();
+          const list = await manager.listAlerts();
+          console.log();
+          console.log(theme.success(`  Alert daemon running`) + theme.muted(` (PID ${pid})`));
+          console.log(theme.muted(`  Monitoring ${list.length} alert${list.length !== 1 ? "s" : ""}`));
+          console.log(theme.muted(`  PID file: ${DAEMON_PID}`));
+          console.log();
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(theme.error(`\nError: ${message}\n`));
+        process.exitCode = 1;
+      }
+    });
+
+  alerts.addCommand(daemon);
 
   return alerts;
 }

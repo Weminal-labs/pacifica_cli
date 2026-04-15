@@ -105,6 +105,77 @@ export interface TraderProfile {
   generated_at: string;
 }
 
+// ── M12 Pacifica DEX Integration types ───────────────────────────────────────
+
+export interface PacificaMasterAccount {
+  address: string;
+  balance: string;
+  account_equity: string;
+  available_to_spend: string;
+  available_to_withdraw: string;
+  positions_count: number;
+  orders_count: number;
+  fee_level: number;
+  maker_fee: string;
+  taker_fee: string;
+  cross_mmr: string;
+}
+
+export interface PatternMatchOverlay {
+  pattern_id: string;
+  pattern_name: string;
+  win_rate: number;
+  sample_size: number;
+}
+
+export interface RepSignalOverlay {
+  count: number;
+  top_traders: string[];
+}
+
+export interface FundingWatchOverlay {
+  current_rate: number;
+  trend: "rising" | "falling" | "flat";
+  next_settlement_ms: number;
+}
+
+export interface PositionOverlay {
+  pattern_match: PatternMatchOverlay | null;
+  rep_signal: RepSignalOverlay | null;
+  funding_watch: FundingWatchOverlay | null;
+}
+
+export interface LivePosition {
+  symbol:            string;
+  side:              "bid" | "ask";   // bid = long, ask = short
+  amount:            string;          // position size
+  entry_price:       string;
+  margin:            string;
+  funding:           string;          // cumulative funding paid/received
+  isolated:          boolean;         // false = cross, true = isolated
+  liquidation_price: string;
+  created_at?:       number;
+  updated_at?:       number;
+  overlay:           PositionOverlay;
+}
+
+export interface PortfolioAccount {
+  address: string;
+  label: string | null;
+  is_master: boolean;
+  balance: string;
+  equity: string;
+  positions: LivePosition[];
+}
+
+export interface PortfolioComposite {
+  master: PacificaMasterAccount | null;
+  accounts: PortfolioAccount[];
+  reputation: ReputationEntry | null;
+  stale?: boolean;
+  generated_at: string;
+}
+
 export interface SocialData {
   asset: string;
   social: SocialContext;

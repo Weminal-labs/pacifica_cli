@@ -1,0 +1,70 @@
+# Pacifica CLI — LLM Quick Reference
+
+Binary: pacifica | pacifica-mcp (MCP server)
+Version: 0.1.0
+Platform: Solana perpetuals DEX (Pacifica DEX)
+Config: ~/.pacifica/config.json | Init: pacifica init
+
+## Symbol Format
+BASE-USDC-PERP (e.g. SOL-USDC-PERP, ETH-USDC-PERP, BTC-USDC-PERP)
+Side: bid=long=buy | ask=short=sell
+Funding: raw decimal (0.0004 = 0.04%/8h, APR = rate×3×365)
+
+## Commands (all support --json unless noted)
+
+pacifica init                                      # setup wizard, run once
+pacifica scan [--gainers] [--losers] [--min-volume <usd>]
+pacifica trade buy <SYM> <size> [-l LEV] [-t market|limit] [-p price] [--tp] [--sl]
+pacifica trade sell <SYM> <size> [-l LEV] [-t market|limit] [-p price] [--tp] [--sl]
+pacifica orders
+pacifica orders cancel <orderId>
+pacifica orders cancel-all [symbol]
+pacifica positions
+pacifica positions close <symbol>
+pacifica heatmap [--compact]                       # no --json
+pacifica journal [--all] [--weekly] [--monthly] [--symbol] [--limit]
+pacifica journal export [--format csv|json] [--out] [--from] [--to]
+pacifica funding
+pacifica simulate <long|short> <market> <size_usd> [--leverage] [--entry]
+pacifica alerts list
+pacifica alerts add --symbol <SYM> --above|--below|--funding-above|--funding-below|--volume-spike <val>
+pacifica alerts remove <id>
+pacifica alerts check [--all]
+pacifica alerts daemon start|stop|status [--interval <s>]
+pacifica smart trailing <symbol> -d <pct>
+pacifica smart list [--active]
+pacifica smart cancel <id>
+pacifica arb scan [--min-apr <n>]
+pacifica arb start [--size <usd>] [--min-apr <n>] [--max-positions <n>]
+pacifica arb stop
+pacifica arb status
+pacifica arb list [--status active|closed|error|all]
+pacifica arb close <id>
+pacifica arb config [--show] [--min-apr] [--size] [--max-positions] [--exit] [--enable|--disable]
+pacifica leaderboard [--limit] [--live] [--watch] [--filter rising|falling|consistent]
+pacifica intelligence patterns
+pacifica intelligence reputation [--limit]
+pacifica intelligence run [--patterns]
+pacifica intelligence me
+pacifica intelligence serve [--port]
+pacifica watch                                     # TUI, no --json
+pacifica copy watch <address> [--multiplier] [--auto] [--interval]
+pacifica copy list
+pacifica agent status
+pacifica agent start | stop | config | log [--today] [--action] [--symbol] [--limit]
+
+## Key Flags
+--json       machine-readable output on stdout
+--testnet    override network to testnet
+--leverage   1–50 (trade commands)
+--validate   (not a real flag — use simulate first, then trade)
+
+## Dangerous Commands (require care)
+trade buy, trade sell, positions close,
+orders cancel, orders cancel-all,
+arb start, arb close, copy watch --auto
+
+## Output: JSON arrays/objects on stdout. Errors to stderr, exit code 1.
+## Safety: always simulate before trading. check agent status before autonomous sessions.
+## Rep scores: 0–100. >= 70 = high quality trader.
+## Patterns: verified=true, win_rate >= 0.60, sample_size >= 10 = reliable signal.

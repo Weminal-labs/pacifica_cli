@@ -5,11 +5,11 @@
 // and optional pattern backtest panel when ?patternId= is present.
 // ---------------------------------------------------------------------------
 
-import { useState, useCallback, useEffect, Suspense, useMemo } from "react";
+import { useState, useCallback, useEffect, Suspense, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { OrangeLabel } from "../../components/ui/OrangeLabel";
-import { PriceChart }          from "./_components/PriceChart";
+import { PriceChart, type TF } from "./_components/PriceChart";
 import { VolatilityScenarios } from "./_components/VolatilityScenarios";
 import { PatternBacktestPanel } from "./_components/PatternBacktestPanel";
 import { useLiveMarket }        from "./_hooks/useLiveMarket";
@@ -61,18 +61,41 @@ function SimulateForm() {
   const [entryPrice,   setEntryPrice]   = useState(paramPrice ?? "");
   const [manualFunding,setManualFunding]= useState("");
   const [sigmaBand,    setSigmaBand]    = useState<number | null>(null);
+  const [chartTf,      setChartTf]      = useState<TF>("1D");
+  const [selectedScenario, setSelectedScenario] = useState<{
+    label: string; pct: number; pnl: number; exitPrice: number;
+  } | null>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+
+  // Sync state when URL params change (Next.js keeps component mounted across navigations)
+  useEffect(() => {
+    if (paramSide === "short" || paramSide === "long") setSide(paramSide);
+  }, [paramSide]);
+
+  useEffect(() => {
+    if (!paramSymbol) return;
+    const inList = KNOWN_MARKETS.includes(paramSymbol);
+    setSymbol(inList ? paramSymbol : "ETH");
+    setCustomSymbol(inList ? "" : paramSymbol);
+    setEntryPrice(paramPrice ?? "");
+    setManualFunding("");
+    setSigmaBand(null);
+    setSelectedScenario(null);
+  }, [paramSymbol, paramPrice]);
 
   const sym = (customSymbol.trim().toUpperCase() || symbol);
 
   // Auto-fetch live market data (price + funding)
   const live = useLiveMarket(sym);
 
-  // Auto-fill entry price from live data
+  // Auto-fill entry price from live data (re-fires whenever sym or live.price changes)
   useEffect(() => {
-    if (live.price && live.price > 0 && !paramPrice) {
-      setEntryPrice(String(live.price));
+    if (live.price && live.price > 0) {
+      // Round to sensible decimal places based on price magnitude
+      const dp = live.price >= 1000 ? 2 : live.price >= 1 ? 4 : 6;
+      setEntryPrice(live.price.toFixed(dp));
     }
-  }, [live.price, paramPrice]);
+  }, [sym, live.price]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-fill funding from live data (don't overwrite if user typed something)
   useEffect(() => {
@@ -99,6 +122,22 @@ function SimulateForm() {
   // we pass entryPrice in and get the computed target back indirectly through
   // the pattern's avg_pnl_pct rendered in the panel)
   const [targetPrice] = useState<number | null>(null);
+
+  // Live-recomputed preview: keep the chosen σ-level locked but recompute exit
+  // price + pnl against current entryPrice/side/size/leverage so the banner
+  // and chart line track edits without the user having to re-click.
+  const livePreview = useMemo(() => {
+    if (!selectedScenario || !isValid) return null;
+    const exitPrice = epNum * (1 + selectedScenario.pct / 100);
+    const r = simulate(side, sym, sizeNum, levNum, epNum, fundNum, [selectedScenario.pct]);
+    const row = r.scenarios[0];
+    return {
+      label: selectedScenario.label,
+      pct:   selectedScenario.pct,
+      pnl:   row.pnl,
+      exitPrice,
+    };
+  }, [selectedScenario, isValid, epNum, side, sym, sizeNum, levNum, fundNum]);
 
   // Funding card
   const fundingCard = useMemo(() => {
@@ -226,26 +265,37 @@ function SimulateForm() {
             </div>
           </div>
 
-          {/* Entry Price — auto-filled */}
+          {/* Entry Price — auto-filled, manually overridable */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-[11px] font-mono text-neutral-500 uppercase tracking-wider">
                 Entry Price (USD)
               </label>
-              {live.loading && <span className="text-[9px] font-mono text-orange-500 animate-pulse">fetching…</span>}
-              {live.source === "testnet" && !live.loading && (
-                <span className="text-[9px] font-mono text-green-600">● live · testnet</span>
-              )}
-              {live.source === "local" && !live.loading && (
-                <span className="text-[9px] font-mono text-orange-500/70">● local server</span>
-              )}
+              <div className="flex items-center gap-2">
+                {live.loading && <span className="text-[9px] font-mono text-orange-500 animate-pulse">fetching…</span>}
+                {live.price && live.price > 0 && !live.loading && (
+                  <button
+                    onClick={() => setEntryPrice(String(live.price))}
+                    className="text-[9px] font-mono text-orange-500/70 hover:text-orange-400 border border-orange-500/20 px-1.5 py-0.5 hover:border-orange-500/40 transition-colors"
+                    title="Reset to live market price"
+                  >
+                    ↺ live: ${live.price?.toLocaleString("en-US", { maximumFractionDigits: 4 })}
+                  </button>
+                )}
+                {live.source === "testnet" && !live.loading && (
+                  <span className="text-[9px] font-mono text-green-600">● testnet</span>
+                )}
+              </div>
             </div>
             <input
               type="number" min="0" step="any" value={entryPrice}
               onChange={(e) => setEntryPrice(e.target.value)}
-              placeholder={`${sym} mark price`}
+              placeholder="Enter price manually or auto-fetches…"
               className="w-full bg-[#111111] border border-neutral-500/20 text-white text-sm px-3 py-2.5 font-mono placeholder:text-neutral-600 focus:outline-none focus:border-orange-500/50"
             />
+            <p className="text-[10px] font-mono text-neutral-700 mt-1">
+              Auto-filled from live market · edit freely · click ↺ to reset
+            </p>
           </div>
 
           {/* Funding Rate — auto-filled */}
@@ -274,6 +324,29 @@ function SimulateForm() {
             )}
           </div>
 
+          {/* Simulate CTA */}
+          <div className="pt-2">
+            <button
+              type="button"
+              disabled={!isValid}
+              onClick={() =>
+                resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
+              className={`w-full py-3 font-mono text-sm font-bold tracking-wider text-center border transition-colors ${
+                isValid
+                  ? "bg-orange-500 border-orange-500 text-black hover:bg-orange-400 cursor-pointer"
+                  : "bg-transparent border-neutral-500/20 text-neutral-600 cursor-not-allowed"
+              }`}
+            >
+              {isValid ? "▶ View Simulation Results →" : "Enter size + leverage to simulate"}
+            </button>
+            {isValid && (
+              <p className="text-[10px] font-mono text-neutral-600 text-center mt-1.5">
+                Results update live as you type · no submit needed
+              </p>
+            )}
+          </div>
+
           {/* Quick links */}
           <p className="text-[11px] text-neutral-700 font-mono text-center">
             <Link href="/simulate?side=long&symbol=BTC" className="text-orange-500/60 hover:text-orange-500">Long BTC</Link>
@@ -285,7 +358,7 @@ function SimulateForm() {
         </div>
 
         {/* ── Right: Results stack ── */}
-        <div className="space-y-4">
+        <div ref={resultsRef} className="space-y-4">
 
           {/* Pattern Backtest Panel (only if patternId in URL) */}
           {paramPatternId && (
@@ -355,7 +428,39 @@ function SimulateForm() {
             liquidationPrice={isValid ? liqPrice : null}
             targetPrice={targetPrice}
             sigmaBand={sigmaBand}
+            scenarioPrice={livePreview?.exitPrice ?? null}
+            scenarioLabel={livePreview?.label ?? null}
+            tf={chartTf}
+            onTfChange={setChartTf}
+            onPickEntry={(p) => {
+              const dp = p >= 1000 ? 2 : p >= 1 ? 4 : 6;
+              setEntryPrice(p.toFixed(dp));
+              // livePreview tracks entry automatically — no need to clear
+            }}
           />
+
+          {/* Scenario preview banner */}
+          {livePreview && (
+            <div className="relative bg-[#0A1410] border border-green-500/30 px-4 py-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-3 font-mono text-[11px]">
+                <span className="text-green-500 font-bold tracking-wider">PREVIEW {livePreview.label}</span>
+                <span className="text-neutral-500">if price hits</span>
+                <span className="text-white font-semibold">{fmtPrice(livePreview.exitPrice)}</span>
+                <span className="text-neutral-500">→ P&amp;L</span>
+                <span className={`font-bold ${livePreview.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                  {livePreview.pnl >= 0 ? "+" : ""}${livePreview.pnl.toFixed(2)}
+                </span>
+                <span className="text-neutral-600">({livePreview.pct >= 0 ? "+" : ""}{livePreview.pct.toFixed(1)}% move)</span>
+              </div>
+              <button
+                onClick={() => setSelectedScenario(null)}
+                className="text-neutral-500 hover:text-white font-mono text-[11px] leading-none px-1"
+                aria-label="Clear preview"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           {/* Volatility Scenarios */}
           {isValid && (
@@ -366,7 +471,10 @@ function SimulateForm() {
               leverage={levNum}
               entryPrice={epNum}
               fundingRate={fundNum}
+              tf={chartTf}
               onVolReady={(delta) => setSigmaBand(delta)}
+              selectedLabel={selectedScenario?.label ?? null}
+              onSelectScenario={setSelectedScenario}
             />
           )}
 

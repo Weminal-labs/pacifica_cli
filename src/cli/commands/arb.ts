@@ -109,47 +109,79 @@ function buildScanCmd(): Command {
         manager.load();
 
         console.log(theme.muted("Scanning markets..."));
-        const opportunities = await manager.scanOpportunities();
+        const context = await manager.scanAllMarkets();
+
+        // Apply threshold filter locally
+        const threshold = arbConfig.min_apr_threshold;
+        const matches = context.allOpportunities.filter(
+          (o) => o.annualizedApr >= threshold,
+        );
 
         if (opts.json) {
-          console.log(JSON.stringify(opportunities, null, 2));
+          console.log(JSON.stringify({ opportunities: matches, context }, null, 2));
           return;
         }
 
-        if (opportunities.length === 0) {
-          console.log(theme.muted(`\nNo opportunities found above ${arbConfig.min_apr_threshold}% APR.\n`));
-          return;
-        }
+        // Regime header — always shown
+        const regimeStr = context.regime === "HOT"
+          ? theme.profit(context.regime)
+          : context.regime === "WARM"
+          ? theme.emphasis(context.regime)
+          : theme.muted(context.regime);
+        const maxAprStr = context.maxAprFound > 0
+          ? theme.muted(`Max APR: ${fmtPct(context.maxAprFound)} (${context.maxAprSymbol})`)
+          : theme.muted("No eligible markets");
 
         console.log();
         console.log(theme.header("Funding Rate Arbitrage Opportunities"));
         console.log(theme.muted("─".repeat(90)));
-        console.log(
-          `  ${pad("Symbol", 8)} ${padLeft("Rate", 10)} ${padLeft("APR", 10)} ${pad("Side", 16)} ${padLeft("Volume 24h", 12)} ${padLeft("Score", 8)} ${padLeft("Ext Div", 10)}`,
-        );
-        console.log(theme.muted("  " + "─".repeat(84)));
+        console.log(`  Regime: ${regimeStr}  ${maxAprStr}  ${theme.muted(`${context.eligibleMarkets} markets scanned`)}`);
+        console.log(theme.muted("─".repeat(90)));
 
-        for (const opp of opportunities) {
-          const rate = (opp.currentRate * 100).toFixed(4) + "%";
-          const apr = fmtPct(opp.annualizedApr);
-          const aprColor = opp.annualizedApr > 80 ? theme.profit(apr)
-            : opp.annualizedApr > 40 ? theme.emphasis(apr)
-            : theme.muted(apr);
-          const side = opp.side === "short_collects"
-            ? theme.profit("▼ short earns")
-            : theme.warning("▲ long earns");
-          const vol = "$" + (opp.volume24hUsd / 1e6).toFixed(1) + "M";
-          const div = opp.divergenceBps !== undefined
-            ? (opp.divergenceBps > 0 ? "+" : "") + opp.divergenceBps + "bps"
-            : "—";
-
+        const printRows = (opps: typeof matches): void => {
           console.log(
-            `  ${pad(opp.symbol, 8)} ${padLeft(rate, 21)} ${padLeft(aprColor, 21)} ${pad(side, 27)} ${padLeft(vol, 12)} ${padLeft(opp.score.toFixed(1), 8)} ${padLeft(div, 10)}`,
+            `  ${pad("Symbol", 8)} ${padLeft("Rate", 10)} ${padLeft("APR", 10)} ${pad("Side", 16)} ${padLeft("Volume 24h", 12)} ${padLeft("Score", 8)} ${padLeft("Ext Div", 10)}`,
           );
-        }
+          console.log(theme.muted("  " + "─".repeat(84)));
+          for (const opp of opps) {
+            const rate = (opp.currentRate * 100).toFixed(4) + "%";
+            const apr = fmtPct(opp.annualizedApr);
+            const aprColor = opp.annualizedApr > 80 ? theme.profit(apr)
+              : opp.annualizedApr > 40 ? theme.emphasis(apr)
+              : theme.muted(apr);
+            const side = opp.side === "short_collects"
+              ? theme.profit("▼ short earns")
+              : theme.warning("▲ long earns");
+            const vol = "$" + (opp.volume24hUsd / 1e6).toFixed(1) + "M";
+            const div = opp.divergenceBps !== undefined
+              ? (opp.divergenceBps > 0 ? "+" : "") + opp.divergenceBps + "bps"
+              : "—";
+            console.log(
+              `  ${pad(opp.symbol, 8)} ${padLeft(rate, 21)} ${padLeft(aprColor, 21)} ${pad(side, 27)} ${padLeft(vol, 12)} ${padLeft(opp.score.toFixed(1), 8)} ${padLeft(div, 10)}`,
+            );
+          }
+        };
 
-        console.log();
-        console.log(theme.muted(`  ${opportunities.length} opportunities found. Use 'pacifica arb start' to activate the bot.`));
+        if (matches.length > 0) {
+          console.log();
+          printRows(matches);
+          console.log();
+          console.log(theme.muted(`  ${matches.length} opportunities found. Use 'pacifica arb start' to activate the bot.`));
+        } else {
+          console.log();
+          console.log(theme.muted(`  No opportunities above ${threshold}% APR.`));
+
+          const topN = context.allOpportunities.slice(0, 3);
+          if (topN.length > 0) {
+            console.log();
+            console.log(theme.muted("  Best available (below threshold):"));
+            console.log();
+            printRows(topN);
+            console.log();
+            const suggestApr = Math.max(Math.floor(topN[0].annualizedApr), 1);
+            console.log(theme.muted(`  Tip: run 'pacifica arb scan --min-apr ${suggestApr}' to see these.`));
+          }
+        }
         console.log();
       } catch (err) {
         console.error(theme.error(`\nError: ${err instanceof Error ? err.message : String(err)}\n`));
@@ -170,7 +202,8 @@ function buildStartCmd(): Command {
     .option("--size <usd>", "Position size in USD", parseFloat)
     .option("--min-apr <n>", "Minimum APR threshold", parseFloat)
     .option("--max-positions <n>", "Max concurrent positions", parseInt)
-    .action(async (opts: { size?: number; minApr?: number; maxPositions?: number }) => {
+    .option("--dry-run", "Simulate entries without placing orders — prints what the bot would open, then exits")
+    .action(async (opts: { size?: number; minApr?: number; maxPositions?: number; dryRun?: boolean }) => {
       let client: PacificaClient | undefined;
       try {
         const config = await loadConfig();
@@ -187,6 +220,102 @@ function buildStartCmd(): Command {
 
         const manager = new ArbManager(client, arbConfig);
         manager.load();
+
+        // ── Dry-run: scan, apply guardrails, print simulated entries, exit ──
+        if (opts.dryRun) {
+          console.log();
+          console.log(theme.header("Arb Bot — Dry Run"));
+          console.log(theme.muted("─".repeat(90)));
+          console.log(`  Min APR:       ${arbConfig.min_apr_threshold}%`);
+          console.log(`  Size per pos:  ${fmtUsd(arbConfig.position_size_usd)}`);
+          console.log(`  Max positions: ${arbConfig.max_concurrent_positions}`);
+          console.log(`  Exit policy:   ${arbConfig.exit_policy}`);
+          console.log(theme.muted("─".repeat(90)));
+          console.log();
+          console.log(theme.muted("  Scanning markets..."));
+
+          const context = await manager.scanAllMarkets();
+          const threshold = arbConfig.min_apr_threshold;
+          const above = context.allOpportunities.filter((o) => o.annualizedApr >= threshold);
+
+          if (above.length === 0) {
+            console.log();
+            console.log(theme.muted(`  No opportunities above ${threshold}% APR. Bot would stay idle.`));
+            const top = context.allOpportunities[0];
+            if (top) {
+              console.log(theme.muted(`  Best available: ${top.symbol} at ${fmtPct(top.annualizedApr)} APR (below threshold)`));
+            }
+            console.log();
+            return;
+          }
+
+          // Apply canEnter guardrails to see what the bot would actually take
+          type Sim = { opp: typeof above[0]; wouldEnter: boolean; reason?: string };
+          const simulated: Sim[] = [];
+          let remainingSlots = arbConfig.max_concurrent_positions;
+          for (const opp of above) {
+            const wouldEnter = manager.canEnter(opp) && remainingSlots > 0;
+            if (wouldEnter) remainingSlots--;
+            simulated.push({
+              opp,
+              wouldEnter,
+              reason: !wouldEnter
+                ? (remainingSlots === 0 ? "max positions reached" : "guardrail blocked (cooldown / fee ratio / daily loss)")
+                : undefined,
+            });
+          }
+
+          const taken = simulated.filter((s) => s.wouldEnter);
+          const skipped = simulated.filter((s) => !s.wouldEnter);
+
+          if (taken.length > 0) {
+            console.log();
+            console.log(theme.success(`  Would open ${taken.length} position(s):`));
+            console.log();
+            console.log(
+              `  ${pad("Symbol", 8)} ${pad("Side", 16)} ${padLeft("Rate", 10)} ${padLeft("APR", 10)} ${padLeft("Size", 10)} ${padLeft("Est 8h earn", 14)} ${padLeft("Next funding", 14)}`,
+            );
+            console.log(theme.muted("  " + "─".repeat(88)));
+            for (const { opp } of taken) {
+              const rate = (opp.currentRate * 100).toFixed(4) + "%";
+              const apr = fmtPct(opp.annualizedApr);
+              const side = opp.side === "short_collects" ? theme.profit("▼ short earns") : theme.warning("▲ long earns");
+              const size = fmtUsd(arbConfig.position_size_usd);
+              // Estimated earning per 8h = size * |rate| - fees (approximate with no fees here; fee gate already passed)
+              const est8h = arbConfig.position_size_usd * Math.abs(opp.currentRate);
+              const estStr = theme.profit("+" + fmtUsd(est8h));
+              const nextMin = Math.max(0, Math.round(opp.msToFunding / 60_000));
+              const nextStr = nextMin < 60 ? `${nextMin}m` : `${Math.floor(nextMin / 60)}h${nextMin % 60}m`;
+              console.log(
+                `  ${pad(opp.symbol, 8)} ${pad(side, 27)} ${padLeft(rate, 10)} ${padLeft(apr, 10)} ${padLeft(size, 10)} ${padLeft(estStr, 25)} ${padLeft(nextStr, 14)}`,
+              );
+            }
+            const totalSize = taken.length * arbConfig.position_size_usd;
+            const total8h = taken.reduce((sum, { opp }) => sum + arbConfig.position_size_usd * Math.abs(opp.currentRate), 0);
+            console.log(theme.muted("  " + "─".repeat(88)));
+            console.log(
+              `  ${pad("TOTAL", 8)} ${pad("", 27)} ${padLeft("", 10)} ${padLeft("", 10)} ${padLeft(fmtUsd(totalSize), 10)} ${padLeft(theme.profit("+" + fmtUsd(total8h)), 25)}`,
+            );
+          } else {
+            console.log();
+            console.log(theme.muted("  No positions would be opened (all blocked by guardrails)."));
+          }
+
+          if (skipped.length > 0) {
+            console.log();
+            console.log(theme.muted(`  Skipped ${skipped.length} opportunity(s):`));
+            for (const { opp, reason } of skipped) {
+              console.log(theme.muted(`    - ${opp.symbol} (${fmtPct(opp.annualizedApr)} APR) · ${reason}`));
+            }
+          }
+
+          console.log();
+          console.log(theme.muted("  This was a dry run. No orders were placed."));
+          console.log(theme.muted("  Run without --dry-run to activate the bot."));
+          console.log();
+          return;
+        }
+
         manager.start();
 
         console.log();

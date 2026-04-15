@@ -2,6 +2,8 @@ import Link from "next/link";
 import { OrangeLabel } from "../../../components/ui/OrangeLabel";
 import type { TraderProfile, TradeRecord } from "../../../lib/types";
 
+export const runtime = "edge";
+
 // ---------------------------------------------------------------------------
 // Data fetching
 // ---------------------------------------------------------------------------

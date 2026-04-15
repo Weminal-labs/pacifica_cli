@@ -168,3 +168,35 @@ and API key management. Out of scope for v1.
 but we don't hedge them. Keeps scope tight. Future enhancement.
 
 **Consequences:** Arb bot cannot arbitrage Pacifica/Binance spreads. Only collects Pacifica funding.
+
+---
+
+### M12-001 — Backend proxy for all Pacifica API reads
+
+**Decision:** The browser never calls test-api.pacifica.fi directly. All Pacifica data is fetched by the 4242 Fastify server and served to the browser via /api/pacifica/* routes.  
+**Rationale:** Single cache layer, CORS isolation, consistent error handling, ability to join Pacifica data with intelligence data server-side.  
+**Date:** 2026-04-14
+
+---
+
+### M12-002 — Deep links instead of in-browser signing for order execution
+
+**Decision:** No order placement in the web app. Use "Trade on Pacifica →" deep links to app.pacifica.fi. Phase F (stretch) implements only create-subaccount as a signed write.  
+**Rationale:** Ed25519 browser signing requires precise implementation of Pacifica's canonical JSON format (~2 days of work). Deep links deliver 90% of UX value at 0% of the complexity cost for a hackathon.  
+**Date:** 2026-04-14
+
+---
+
+### M12-003 — Subaccount intelligence as primary differentiator
+
+**Decision:** Build the portfolio page around per-subaccount position overlays, not a generic balance screen. Each position gets a pattern match, rep signal, and funding watch.  
+**Rationale:** Nobody else at the hackathon is showing per-subaccount intelligence. This is a novel, demo-appealing visualization that highlights the intelligence layer's value.  
+**Date:** 2026-04-14
+
+---
+
+### M12-004 — In-memory TTL cache in 4242, not Redis
+
+**Decision:** Use a Map-based in-memory cache in src/intelligence-api/cache.ts for Pacifica API responses.  
+**Rationale:** Hackathon scope. Redis adds zero value for a single-server localhost demo. Cache keeps Pacifica rate limits safe.  
+**Date:** 2026-04-14

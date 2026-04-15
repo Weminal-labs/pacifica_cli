@@ -9,6 +9,8 @@ import { randomUUID } from "node:crypto";
 import { loadRecords, savePatterns } from "./store.js";
 import { loadReputation, saveReputation } from "./store.js";
 import { computeReputation } from "./reputation.js";
+import { analyzeTradePatterns } from "./patterns.js";
+import type { PacificaClient } from "../sdk/client.js";
 import type {
   IntelligenceRecord,
   DetectedPattern,
@@ -287,6 +289,154 @@ export function scoreConfidence(
     confidence: "medium",
     reason: `Pattern ${(pattern.win_rate * 100).toFixed(0)}% win rate`,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Live market scanner
+// ---------------------------------------------------------------------------
+
+export interface ActiveSignal {
+  asset: string;
+  direction: "long" | "short";
+  pattern: DetectedPattern;
+  fundingRate: number;
+  matchedConditions: string[];
+  /** true = all pattern conditions confirmed; false = funding matched, others unresolvable */
+  fullMatch: boolean;
+}
+
+// Axes we can always compute from a single API snapshot
+const SCAN_RELIABLE_AXES = new Set([
+  "funding_rate",
+  "buy_pressure",
+  "momentum_value",
+  "large_orders_count",
+]);
+// oi_change_4h_pct requires two readings — cannot be confirmed in a one-shot scan
+
+/**
+ * Fetch live market data and find which markets currently match verified patterns.
+ *
+ * - Fetches all markets; focuses on the top 25 by |fundingRate| (most interesting).
+ * - For each, fetches recent trades to compute buy pressure, momentum, whale counts.
+ * - Matches conditions against every verified pattern using the same logic as capture.
+ * - Returns one signal per market+pattern match, sorted by pattern win_rate desc.
+ */
+export async function scanForActiveSignals(
+  sdk: PacificaClient,
+  patterns: DetectedPattern[],
+): Promise<ActiveSignal[]> {
+  if (patterns.length === 0) return [];
+
+  const markets = await sdk.getMarkets();
+
+  // Pick the most interesting markets by absolute funding rate
+  const candidates = [...markets]
+    .sort((a, b) => Math.abs(b.fundingRate) - Math.abs(a.fundingRate))
+    .slice(0, 25);
+
+  // Fetch recent trades for all candidates in parallel
+  const tradeResults = await Promise.allSettled(
+    candidates.map((m) => sdk.getRecentTrades(m.symbol).catch(() => [])),
+  );
+
+  const signals: ActiveSignal[] = [];
+
+  for (let i = 0; i < candidates.length; i++) {
+    const market = candidates[i]!;
+    const tradesResult = tradeResults[i];
+    const trades =
+      tradesResult?.status === "fulfilled" ? tradesResult.value : [];
+
+    const tp = analyzeTradePatterns(
+      market.symbol,
+      trades,
+      market.markPrice ?? market.price,
+      50_000,
+    );
+
+    const ctx: MarketContext = {
+      funding_rate: market.fundingRate,
+      open_interest_usd: market.openInterest ?? 0,
+      oi_change_4h_pct: 0, // requires two readings — not available in a one-shot scan
+      mark_price: market.markPrice ?? market.price,
+      volume_24h_usd: market.volume24h ?? 0,
+      buy_pressure: tp.buyPressure,
+      momentum_signal: tp.momentumSignal,
+      momentum_value: tp.momentum,
+      large_orders_count: tp.largeOrders.length,
+      captured_at: new Date().toISOString(),
+    };
+
+    const hasTrades = trades.length >= 5;
+
+    for (const pattern of patterns) {
+      const matchedConditions: string[] = [];
+      let hasReliableHit = false; // at least one funding condition confirmed
+      let fullMatch = true;
+
+      for (const cond of pattern.conditions) {
+        const axis = {
+          key: cond.axis,
+          label: cond.label,
+          op: cond.op,
+          value: cond.value,
+        } as Parameters<typeof matchesCondition>[1];
+
+        const isReliable = SCAN_RELIABLE_AXES.has(cond.axis) &&
+          (cond.axis !== "buy_pressure" || hasTrades) &&
+          (cond.axis !== "momentum_value" || hasTrades) &&
+          (cond.axis !== "large_orders_count" || hasTrades);
+
+        if (!isReliable) {
+          // Can't verify — treat as unresolved (don't fail the match)
+          fullMatch = false;
+          continue;
+        }
+
+        const ok = matchesCondition(ctx, axis);
+        if (!ok) { fullMatch = false; hasReliableHit = false; break; }
+        matchedConditions.push(cond.label);
+        if (cond.axis === "funding_rate") hasReliableHit = true;
+      }
+
+      // Require at least one confirmed condition (funding is the minimum bar)
+      if (matchedConditions.length === 0 || !hasReliableHit) continue;
+
+      // Derive direction from pattern conditions
+      const condLabels = pattern.conditions.map((c) => c.label);
+      let direction: "long" | "short" = "long";
+      if (condLabels.includes("positive_funding") && condLabels.includes("falling_oi")) {
+        direction = "short";
+      } else if (condLabels.includes("high_sell_pressure") || condLabels.includes("bearish_momentum")) {
+        direction = "short";
+      } else if (condLabels.includes("negative_funding")) {
+        direction = "long";
+      }
+
+      signals.push({
+        asset: market.symbol,
+        direction,
+        pattern,
+        fundingRate: market.fundingRate,
+        matchedConditions,
+        fullMatch,
+      });
+    }
+  }
+
+  // One signal per asset — keep the best pattern match per market
+  const seen = new Map<string, ActiveSignal>();
+  for (const s of signals) {
+    const existing = seen.get(s.asset);
+    if (!existing || s.pattern.win_rate > existing.pattern.win_rate) {
+      seen.set(s.asset, s);
+    }
+  }
+
+  return Array.from(seen.values()).sort(
+    (a, b) => b.pattern.win_rate - a.pattern.win_rate,
+  );
 }
 
 // ---------------------------------------------------------------------------

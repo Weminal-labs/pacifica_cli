@@ -1,0 +1,378 @@
+# Phase 3: AI Agent Recipe Export
+
+## Overview
+
+| Field | Value |
+|-------|-------|
+| **Date** | 2026-04-15 |
+| **Priority** | High |
+| **Status** | Planned |
+| **Estimated effort** | 2–3 days |
+| **Depends on** | Phase 1 (backtest endpoint + BacktestPanel data shape) |
+
+### Context Links
+- Master plan: [plan.md](./plan.md)
+- Previous phase: [phase-02-chart-history.md](./phase-02-chart-history.md)
+- Next phase: [phase-04-backtest-cli.md](./phase-04-backtest-cli.md)
+- Simulate page: `web/app/simulate/page.tsx`
+- Example SKILL.md format: `skills/pattern-confirmed-entry/SKILL.md`
+- Skills index: `skills/INDEX.md`
+- Paper trading command: `src/cli/commands/paper.ts`
+
+---
+
+## Key Insight
+
+A simulation already contains everything needed to write an AI agent recipe:
+
+- **Conditions**: the user's inputs are trade conditions (symbol, direction, leverage,
+  funding rate, entry price relative to mark price)
+- **Expected outcome**: the backtest data provides historical win rate, P&L range, duration
+- **Action**: the CLI command to execute the trade once conditions are met
+- **Paper mode command**: a safe, zero-risk version for testing the recipe
+
+The simulation is not a dead-end. It is a recipe draft. The Recipe Builder panel
+makes this explicit by generating the recipe in real time as the user adjusts inputs.
+
+---
+
+## Requirements
+
+### Recipe Builder Panel
+
+1. New file: `web/components/RecipeBuilderPanel.tsx`
+2. Rendered in the results column as the final card, after BacktestPanel.
+3. Only shown when `result !== null` (simulation has been run).
+4. Does NOT require the API — built entirely from `SimResult` + `BacktestResult`
+   props already available in `SimulateForm`.
+
+5. **CLI command block** (read-only, monospaced):
+   ```
+   pacifica trade buy ETH-USDC-PERP 1000 --leverage 5 --validate
+   ```
+   - Symbol: `{sym}-USDC-PERP` (match the market format used by paper.ts)
+   - Size: formatted as USD amount
+   - Leverage: from form input
+   - `--validate` flag appended by default (safest form)
+   - "Copy" button copies the command to clipboard using `navigator.clipboard.writeText`
+
+6. **Conditions checklist**: a list of the entry conditions derived from the form inputs.
+   Each condition rendered as: `[checkmark icon] {label}`
+   - `funding {op} {value}%` — always present (from fundingRate input)
+   - `direction: {side}` — always present
+   - `leverage: {lev}x` — always present
+   - `entry at mark price` — present when the live price fetch was used
+   Conditions come from the form state — the panel accepts them as props.
+
+7. **Expected outcome range**: populated from backtest data when available.
+   - `Based on {N} historical trades: {worst}% to {best}%, median {median}%`
+   - Shows "No historical data" when `backtest.matched < 5`
+
+8. **"Copy Recipe" button**:
+   - Generates a complete SKILL.md YAML string (see format below)
+   - Copies to clipboard using `navigator.clipboard.writeText`
+   - Shows a "Copied!" confirmation for 2 seconds
+
+9. **"Test in Paper Mode" button**:
+   - Generates and copies the paper trade command:
+     ```
+     pacifica paper buy ETH-USDC-PERP 0.1 --leverage 5
+     ```
+   - Size is converted from USD to base asset quantity:
+     `baseQty = sizeUsd / entryPrice`, formatted to 4 decimal places
+   - Shows a "Copied!" confirmation for 2 seconds
+
+### SKILL.md Export Format
+
+The generated SKILL.md string should follow the existing format in `skills/`:
+
+```yaml
+---
+name: simulate-export-{sym}-{direction}-{timestamp}
+version: 1.0.0
+description: >
+  {direction} {sym} setup at {leverage}x leverage.
+  Based on {N} historical trades: win rate {winRate}%, median P&L {median}%.
+category: simulate-export
+generated_by: pacifica-simulate
+generated_at: {ISO timestamp}
+requires:
+  commands: [simulate, trade, paper]
+  auth_required: true
+  dangerous: true
+conditions:
+  - label: "funding {op} {value}%"
+    axis: funding_rate
+    op: {op}
+    value: {value}
+  - label: "direction: {direction}"
+    axis: direction
+    op: eq
+    value: "{direction}"
+  - label: "leverage: {lev}x"
+    axis: leverage
+    op: lte
+    value: {lev}
+expected_outcome:
+  win_rate: {winRate}
+  avg_pnl_pct: {avgPnl}
+  median_pnl_pct: {median}
+  worst_pnl_pct: {worst}
+  best_pnl_pct: {best}
+  avg_duration_minutes: {avgDuration}
+  sample_size: {N}
+---
+
+# {sym} {direction} Setup — Simulate Export
+
+## Conditions at Entry
+
+{conditionsList}
+
+## Expected Outcome
+
+Based on {N} similar historical trades:
+- Win rate: {winRate}%
+- Median P&L: {median}%
+- Range: {worst}% to {best}%
+- Average hold time: {avgDuration} minutes
+
+## Commands
+
+\`\`\`bash
+# Paper test (no risk)
+pacifica paper buy {sym}-USDC-PERP {baseQty} --leverage {lev}
+
+# Live trade (validate only — remove --validate to submit)
+pacifica trade buy {sym}-USDC-PERP {sizeUsd} --leverage {lev} --validate
+\`\`\`
+
+## Notes
+
+This recipe was generated by pacifica simulate on {date}.
+Review conditions carefully before executing. Past patterns do not guarantee future results.
+```
+
+### SimulationRun Log
+
+10. Every time the user clicks "Run Simulation", persist a log entry to `localStorage`
+    under the key `pacifica_simulation_runs`.
+11. Log entry shape:
+    ```typescript
+    interface SimulationRun {
+      id: string;                   // crypto.randomUUID()
+      timestamp: string;            // ISO 8601
+      symbol: string;
+      direction: "long" | "short";
+      leverage: number;
+      size_usd: number;
+      entry_price: number;
+      funding_rate: number;
+      backtest_matched: number;     // 0 if no backtest data
+      backtest_win_rate: number | null;
+      backtest_avg_pnl_pct: number | null;
+      exported_recipe: boolean;     // true if "Copy Recipe" was clicked
+    }
+    ```
+12. Cap at 100 most recent entries (trim oldest when limit reached).
+
+### "My Simulations" Tab
+
+13. Add a tab bar to the simulate page with two tabs:
+    - "Simulator" (the current page content)
+    - "My Simulations" (new)
+14. Tab bar renders below the page header, above the form/results grid.
+15. Use URL hash to persist tab state: `#simulator` and `#history`.
+16. "My Simulations" tab content:
+    - Reads from `localStorage` key `pacifica_simulation_runs`
+    - Shows a table: timestamp, symbol, direction, leverage, backtest win rate (or "—"),
+      exported (yes/no badge)
+    - Newest first
+    - Empty state: "No simulations yet. Run your first simulation above."
+    - "Clear History" button with a confirmation step
+
+---
+
+## Architecture
+
+```
+simulate/page.tsx
+  SimulateForm
+    └── results column
+          ├── Summary card
+          ├── ScenarioChart (Phase 2)
+          ├── BacktestPanel (Phase 1+2)
+          └── [new] RecipeBuilderPanel
+                ├── CLI command block + copy button
+                ├── Conditions checklist
+                ├── Expected outcome range
+                ├── "Copy Recipe" → SKILL.md export to clipboard
+                └── "Test in Paper Mode" → paper command to clipboard
+
+Tab bar (page level)
+  ├── "Simulator" tab → <SimulateForm />
+  └── "My Simulations" tab → <SimulationHistory />
+        └── reads localStorage["pacifica_simulation_runs"]
+```
+
+### RecipeBuilderPanel props
+
+```typescript
+interface RecipeBuilderPanelProps {
+  result: SimResult;              // from simulate() calc
+  backtest: BacktestResult | null; // null when no backtest data
+  fundingRate: string;            // raw form value e.g. "0.01"
+  usedLivePrice: boolean;         // true when live price fetch was used
+}
+```
+
+### generateSkillYaml utility
+
+```typescript
+// web/lib/recipe-export.ts
+export function generateSkillYaml(
+  result: SimResult,
+  backtest: BacktestResult | null,
+  fundingRate: string,
+  usedLivePrice: boolean,
+): string {
+  // Build YAML string via template literals
+  // No YAML library needed — the format is simple enough for template strings
+  // Return the complete SKILL.md content as a string
+}
+```
+
+### Simulation log utility
+
+```typescript
+// web/lib/simulation-log.ts
+export function appendSimulationRun(run: SimulationRun): void {
+  const existing = JSON.parse(localStorage.getItem("pacifica_simulation_runs") ?? "[]");
+  const updated = [run, ...existing].slice(0, 100);
+  localStorage.setItem("pacifica_simulation_runs", JSON.stringify(updated));
+}
+
+export function getSimulationRuns(): SimulationRun[] {
+  return JSON.parse(localStorage.getItem("pacifica_simulation_runs") ?? "[]");
+}
+
+export function clearSimulationRuns(): void {
+  localStorage.removeItem("pacifica_simulation_runs");
+}
+```
+
+---
+
+## Related Code Files
+
+| File | Relationship |
+|------|-------------|
+| `web/app/simulate/page.tsx` | Add tab bar, wire RecipeBuilderPanel, call `appendSimulationRun` on run |
+| `web/components/RecipeBuilderPanel.tsx` | New file |
+| `web/components/SimulationHistory.tsx` | New file — "My Simulations" tab content |
+| `web/lib/recipe-export.ts` | New file — `generateSkillYaml` utility |
+| `web/lib/simulation-log.ts` | New file — localStorage helpers |
+| `skills/pattern-confirmed-entry/SKILL.md` | Reference for SKILL.md format |
+| `src/cli/commands/paper.ts` | Source of truth for paper command format and symbol convention |
+
+---
+
+## Implementation Steps
+
+1. **Create `web/lib/recipe-export.ts`**
+   - Implement `generateSkillYaml(result, backtest, fundingRate, usedLivePrice): string`
+   - Use template literals to build YAML — no library needed
+   - Unit testable: pure function with no side effects
+
+2. **Create `web/lib/simulation-log.ts`**
+   - Implement `appendSimulationRun`, `getSimulationRuns`, `clearSimulationRuns`
+   - Guard against localStorage unavailability (SSR) with `typeof window !== "undefined"`
+
+3. **Create `web/components/RecipeBuilderPanel.tsx`**
+   - Accept props as defined above
+   - Build CLI command string from `result`
+   - Build conditions array from `result` + `fundingRate` + `usedLivePrice`
+   - Show expected outcome range from `backtest` or "No historical data"
+   - "Copy" button: use `navigator.clipboard.writeText` + 2s "Copied!" state
+   - "Copy Recipe" button: call `generateSkillYaml` then clipboard
+   - "Test in Paper Mode" button: build paper command string then clipboard
+   - Style to match existing Pacifica cards
+
+4. **Create `web/components/SimulationHistory.tsx`**
+   - Reads `getSimulationRuns()` on mount
+   - Renders a table with columns: date/time, symbol, direction, leverage, win rate, exported
+   - "Clear History" button → `confirm()` dialog → `clearSimulationRuns()` → re-render empty
+   - Empty state illustration (match existing empty state patterns in the web app)
+
+5. **Update `web/app/simulate/page.tsx`**
+   - Add tab state: `const [tab, setTab] = useState<"simulator" | "history">("simulator")`
+   - Render tab bar below header: two buttons with active/inactive styling
+   - Conditionally render `<SimulateForm>` or `<SimulationHistory>` based on tab
+   - In `SimulateForm.run()`: call `appendSimulationRun` with current inputs + backtest data
+   - Add `RecipeBuilderPanel` to results column, passing `result`, `backtest`, `fundingRate`
+   - Track `usedLivePrice` state (set to `true` when "Use live price" button is clicked)
+
+6. **Test clipboard API**
+   - Clipboard write requires user gesture (button click) — already satisfied
+   - Test on both HTTP (localhost) and any HTTPS deployment (clipboard API requires HTTPS in production)
+   - Add fallback: if `navigator.clipboard` throws, select and copy using legacy `execCommand`
+
+---
+
+## Todo List
+
+- [ ] Create `web/lib/recipe-export.ts` with `generateSkillYaml`
+- [ ] Create `web/lib/simulation-log.ts` with localStorage helpers
+- [ ] Create `web/components/RecipeBuilderPanel.tsx`
+- [ ] Create `web/components/SimulationHistory.tsx`
+- [ ] Update `simulate/page.tsx` to add tab bar
+- [ ] Update `simulate/page.tsx` to render RecipeBuilderPanel in results
+- [ ] Update `simulate/page.tsx` to call `appendSimulationRun` on Run Simulation
+- [ ] Track `usedLivePrice` state in SimulateForm
+- [ ] Test "Copy" buttons (CLI command, recipe, paper mode)
+- [ ] Test simulation log: run 3 simulations, verify all appear in "My Simulations"
+- [ ] Test localStorage cap: > 100 entries should trim oldest
+- [ ] Test "Clear History" confirmation and empty state
+- [ ] Verify generated SKILL.md YAML is valid (no syntax errors in frontmatter)
+
+---
+
+## Success Criteria
+
+- "Copy Recipe" copies a valid SKILL.md YAML string to clipboard
+- "Test in Paper Mode" copies a correct `pacifica paper buy` command
+- Simulation run is logged to localStorage after every "Run Simulation" click
+- "My Simulations" tab shows all past runs in reverse chronological order
+- "Clear History" removes all entries and shows empty state
+- RecipeBuilderPanel renders without error when `backtest === null`
+- CLI command format matches what `src/cli/commands/paper.ts` accepts
+
+---
+
+## Risk Assessment
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
+| localStorage unavailable (SSR/incognito) | Medium | Low | Guard all localStorage access with `typeof window !== "undefined"` |
+| Clipboard API blocked (non-secure origin) | Low | Medium | Add legacy `execCommand('copy')` fallback |
+| Generated YAML has invalid indentation | Medium | Medium | Build and test YAML template against existing skill files; parse with a regex validator in the test |
+| Tab URL-hash state clashes with Next.js routing | Low | Low | Use React state only (not hash router) — the simulate page has no subpaths |
+| Paper command base asset quantity rounding | Low | Low | Use `toPrecision(6)` or similar for the base quantity; show in UI before copy |
+
+---
+
+## Security Considerations
+
+- Generated SKILL.md is written only to the clipboard — never to the filesystem from the browser
+- localStorage data contains no PII: only trade params (symbol, direction, size, price) and statistics
+- The paper command copied to clipboard uses `--validate` on the live trade command to prevent accidental execution
+- No server-side storage of simulation history — fully local, user controls their own data
+
+---
+
+## Next Steps
+
+After Phase 3 is complete:
+- Phase 4 ([phase-04-backtest-cli.md](./phase-04-backtest-cli.md)) brings the same
+  backtest capability to the CLI — `pacifica backtest setup` queries the same intelligence
+  records, and `pacifica backtest pattern <id>` validates patterns from the CLI

@@ -1,4 +1,6 @@
-export const runtime = 'edge';
+
+export const runtime = "edge";
+
 import { OrangeLabel } from "../../components/ui/OrangeLabel";
 import { PatternCard } from "../../components/ui/PatternCard";
 import { LiveSignalBanner } from "../../components/patterns/LiveSignalBanner";
@@ -69,7 +71,7 @@ export default async function PatternsPage() {
         <div className="flex items-center gap-3 mb-6 px-4 py-3 bg-[#0F0F0F] border border-neutral-500/20 text-[11px] font-mono text-neutral-500">
           <span className="w-1.5 h-1.5 rounded-full bg-neutral-600 shrink-0" />
           Showing example patterns · Run{" "}
-          <code className="text-orange-500 mx-1">pacifica intelligence start</code>
+          <code className="text-orange-500 mx-1">pacifica intelligence serve</code>
           {" "}to see patterns detected from your own trades
         </div>
       )}

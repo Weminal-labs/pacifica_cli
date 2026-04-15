@@ -223,6 +223,41 @@ export interface ApiResponse<T> {
 }
 
 // ---------------------------------------------------------------------------
+// Leaderboard
+// ---------------------------------------------------------------------------
+
+/** Raw shape returned by /api/v1/leaderboard */
+export interface RawLeaderboardEntry {
+  address: string;
+  pnl_all_time: string;
+  pnl_1d: string;
+  pnl_7d: string;
+  pnl_30d: string;
+  equity_current: string;
+  volume_all_time: string;
+  volume_30d: string;
+}
+
+/** Parsed leaderboard entry with derived fields */
+export interface LeaderboardEntry {
+  rank: number;
+  trader_id: string;
+  overall_rep_score: number;
+  overall_win_rate: number;
+  closed_trades: number;
+  top_patterns: string[];
+  onchain: {
+    pnl_all_time: number;
+    pnl_1d: number;
+    pnl_7d: number;
+    pnl_30d: number;
+    equity_current: number;
+    volume_all_time: number;
+    volume_30d: number;
+  };
+}
+
+// ---------------------------------------------------------------------------
 // API error
 // ---------------------------------------------------------------------------
 

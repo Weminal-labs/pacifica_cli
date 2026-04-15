@@ -19,8 +19,107 @@ const INTERVALS_PER_YEAR = 3 * 365; // = 1095
 const ENTRY_BLACKOUT_MS = 2 * 60 * 1000; // 2 minutes
 
 // ---------------------------------------------------------------------------
+// Market scan context (full, unfiltered view)
+// ---------------------------------------------------------------------------
+
+export interface MarketScanContext {
+  /** Total markets returned from API */
+  totalMarkets: number;
+  /** Markets that passed the liquidity gate */
+  eligibleMarkets: number;
+  /** Highest APR found among eligible markets */
+  maxAprFound: number;
+  /** Symbol with the highest APR */
+  maxAprSymbol: string;
+  /** Market temperature based on max APR */
+  regime: "HOT" | "WARM" | "COLD";
+  /** All eligible opportunities sorted by APR desc, no threshold filter */
+  allOpportunities: ArbOpportunity[];
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function buildExtRateMap(externalRates: ExternalFundingRate[]): Map<string, ExternalFundingRate> {
+  const map = new Map<string, ExternalFundingRate>();
+  for (const r of externalRates) {
+    if (!map.has(r.symbol) || r.source === "binance") {
+      map.set(r.symbol, r);
+    }
+  }
+  return map;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+/**
+ * Full unfiltered scan — returns all eligible markets sorted by APR desc plus
+ * market-wide context (count, max APR, regime). Used by `arb scan` for display.
+ * Does NOT filter by min_apr_threshold or cap at available slots.
+ */
+export function scanAllMarkets(
+  markets: Market[],
+  config: ArbConfig,
+  activePositions: ArbPosition[],
+  externalRates: ExternalFundingRate[] = [],
+): MarketScanContext {
+  const activeSymbols = new Set(
+    activePositions
+      .filter((p) => p.status === "active" || p.status === "pending")
+      .map((p) => p.symbol),
+  );
+
+  const extRateMap = buildExtRateMap(externalRates);
+  const eligible: ArbOpportunity[] = [];
+
+  for (const market of markets) {
+    const symbol = market.symbol.toUpperCase();
+    if (activeSymbols.has(symbol)) continue;
+    if (!Number.isFinite(market.fundingRate) && !Number.isFinite(market.nextFundingRate)) continue;
+    if (market.volume24h < config.min_market_volume_24h_usd) continue;
+
+    const currentRate = market.fundingRate ?? 0;
+    const predictedRate = market.nextFundingRate ?? currentRate;
+    const effectiveRate = Math.abs(predictedRate) >= Math.abs(currentRate) ? predictedRate : currentRate;
+    const annualizedApr = Math.abs(effectiveRate) * INTERVALS_PER_YEAR * 100;
+    const bookSpreadBps = estimateSpreadBps(market);
+
+    const extEntry = extRateMap.get(symbol);
+    const divergenceBps = config.use_external_rates && extEntry
+      ? Math.round((effectiveRate - extEntry.rate) * 10000)
+      : undefined;
+
+    const score = computeScore(annualizedApr, market.volume24h, bookSpreadBps, Infinity, divergenceBps, config);
+    const side: ArbOpportunity["side"] = effectiveRate > 0 ? "short_collects" : "long_collects";
+
+    eligible.push({
+      symbol, currentRate, predictedRate, annualizedApr, side,
+      markPrice: market.price, volume24hUsd: market.volume24h,
+      bookSpreadBps, nextFundingAt: "", msToFunding: Infinity,
+      score,
+      externalRate: extEntry?.rate,
+      externalSource: extEntry?.source,
+      divergenceBps,
+    });
+  }
+
+  eligible.sort((a, b) => b.annualizedApr - a.annualizedApr);
+
+  const maxApr = eligible[0]?.annualizedApr ?? 0;
+  const regime: MarketScanContext["regime"] = maxApr >= 40 ? "HOT" : maxApr >= 10 ? "WARM" : "COLD";
+
+  return {
+    totalMarkets: markets.length,
+    eligibleMarkets: eligible.length,
+    maxAprFound: maxApr,
+    maxAprSymbol: eligible[0]?.symbol ?? "—",
+    regime,
+    allOpportunities: eligible,
+  };
+}
 
 /**
  * Detect funding rate arb opportunities from the current market snapshot.
@@ -45,15 +144,7 @@ export function detectOpportunities(
 
   if (availableSlots <= 0) return [];
 
-  // Build external rate lookup (Pacifica symbol → rate)
-  const extRateMap = new Map<string, ExternalFundingRate>();
-  for (const r of externalRates) {
-    // Prefer binance over bybit if both present
-    if (!extRateMap.has(r.symbol) || r.source === "binance") {
-      extRateMap.set(r.symbol, r);
-    }
-  }
-
+  const extRateMap = buildExtRateMap(externalRates);
   const opportunities: ArbOpportunity[] = [];
   const now = Date.now();
 

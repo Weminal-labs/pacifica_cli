@@ -1,251 +1,519 @@
 "use client";
 // ---------------------------------------------------------------------------
-// PriceChart — 7-day SVG candlestick chart with overlay lines
-// No external chart library. Pure SVG, ~200 lines.
+// PriceChart — BASCII-style terminal candlestick chart
+// Pure SVG, no library. Timeframe selector: 1D / 3D / 7D
+// Volume bars in lower pane. Right-axis price labels.
+//
+// Interactions:
+//   • Click any candle  → sets entry price to that candle's close (via onPickEntry)
+//   • Click/drag ENTRY  → scrubs entry price along the Y axis
+//   • Hover tooltip, crosshair
 // ---------------------------------------------------------------------------
 
-import { useState, useCallback, type MouseEvent } from "react";
+import { useState, useCallback, useEffect, useRef, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useCandles } from "../_hooks/useCandles";
 import { type PacificaCandle } from "../../../lib/pacifica-public";
+
+export type TF = "1D" | "3D" | "7D";
 
 interface PriceChartProps {
   symbol: string;
   entryPrice: number | null;
   liquidationPrice: number | null;
-  targetPrice?: number | null; // pattern expected exit
-  sigmaBand?: number | null;   // ±1σ daily stdev as a price delta
+  targetPrice?: number | null;
+  sigmaBand?: number | null;
+  /** Dashed "scenario exit" line (e.g. +2σ preview) */
+  scenarioPrice?: number | null;
+  scenarioLabel?: string | null;
+  /** Timeframe controlled by parent so σ can match chart window */
+  tf: TF;
+  onTfChange: (tf: TF) => void;
+  /** Called when user clicks a candle or scrubs the entry line */
+  onPickEntry?: (price: number) => void;
 }
+
+const TF_CANDLES: Record<TF, number> = { "1D": 24, "3D": 72, "7D": 168 };
 
 // SVG dimensions
 const W = 800;
-const H = 220;
-const PAD = { top: 12, bottom: 28, left: 8, right: 64 };
-const CHART_W = W - PAD.left - PAD.right;
-const CHART_H = H - PAD.top - PAD.bottom;
+const H_MAIN = 240;   // candlestick pane
+const H_VOL  = 44;    // volume pane
+const H_XLAB = 20;    // x-axis label row
+const H_TOTAL = H_MAIN + H_VOL + H_XLAB;
+const PAD_L = 4;
+const PAD_R = 72;     // right axis
+const PAD_T = 10;
+const CHART_W = W - PAD_L - PAD_R;
 
-function priceToY(price: number, min: number, max: number): number {
-  return PAD.top + CHART_H - ((price - min) / (max - min)) * CHART_H;
+function toY(price: number, pMin: number, pMax: number): number {
+  return PAD_T + H_MAIN - PAD_T - ((price - pMin) / (pMax - pMin)) * (H_MAIN - PAD_T - 4);
 }
-function idxToX(i: number, total: number): number {
-  return PAD.left + (i / (total - 1)) * CHART_W;
+
+function yToPrice(y: number, pMin: number, pMax: number): number {
+  // inverse of toY
+  const span = H_MAIN - PAD_T - 4;
+  const frac = (PAD_T + H_MAIN - PAD_T - y) / span;
+  return pMin + frac * (pMax - pMin);
+}
+
+function fmtP(p: number): string {
+  if (p >= 10_000) return `$${(p / 1000).toFixed(1)}k`;
+  if (p >= 1000)   return `$${p.toFixed(0)}`;
+  if (p >= 100)    return `$${p.toFixed(2)}`;
+  return `$${p.toFixed(4)}`;
+}
+
+function fmtTime(ms: number, tf: TF): string {
+  const d = new Date(ms);
+  if (tf === "1D") return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function roundForPrice(p: number): number {
+  if (p >= 1000) return Math.round(p * 100) / 100;
+  if (p >= 1)    return Math.round(p * 10000) / 10000;
+  return Math.round(p * 1_000_000) / 1_000_000;
 }
 
 interface Tooltip {
-  x: number;
+  svgX: number;
   candle: PacificaCandle;
-  candleX: number;
+  idx: number;
 }
 
-export function PriceChart({ symbol, entryPrice, liquidationPrice, targetPrice, sigmaBand }: PriceChartProps) {
+export function PriceChart({
+  symbol, entryPrice, liquidationPrice, targetPrice, sigmaBand,
+  scenarioPrice, scenarioLabel,
+  tf, onTfChange, onPickEntry,
+}: PriceChartProps) {
   const { candles, loading, error } = useCandles(symbol);
   const [tooltip, setTooltip] = useState<Tooltip | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [dragPrice, setDragPrice] = useState<number | null>(null);
+  const dragPriceRef = useRef<number | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+
+  // Slice to selected timeframe
+  const visible = candles.slice(-TF_CANDLES[tf]);
+  const total   = visible.length;
+
+  const barW = total > 0 ? Math.max(2, (CHART_W / total) * 0.72) : 6;
+
+  const idxToX = useCallback((i: number) => PAD_L + (i + 0.5) * (CHART_W / Math.max(total, 1)), [total]);
+
+  const clientToSvg = useCallback((clientX: number, clientY: number): { x: number; y: number } | null => {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const rect = svg.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left) * (W / rect.width),
+      y: (clientY - rect.top) * (H_TOTAL / rect.height),
+    };
+  }, []);
 
   const handleMouseMove = useCallback((e: MouseEvent<SVGElement>) => {
-    if (!candles.length) return;
-    const svg = e.currentTarget.getBoundingClientRect();
-    const mx  = e.clientX - svg.left;
-    const relX = mx - PAD.left;
-    const idx  = Math.round((relX / CHART_W) * (candles.length - 1));
-    const safeIdx = Math.max(0, Math.min(idx, candles.length - 1));
-    setTooltip({
-      x:       mx,
-      candle:  candles[safeIdx],
-      candleX: idxToX(safeIdx, candles.length),
-    });
-  }, [candles]);
+    if (!total) return;
+    const pt = clientToSvg(e.clientX, e.clientY);
+    if (!pt) return;
+    const relX = pt.x - PAD_L;
+    const idx   = Math.max(0, Math.min(Math.round((relX / CHART_W) * (total - 1)), total - 1));
+    setTooltip({ svgX: idxToX(idx), candle: visible[idx], idx });
+  }, [total, visible, idxToX, clientToSvg]);
+
+  // ── Drag entry line ──
+  // Using window pointer events so drag survives fast mouse motion out of SVG bounds.
+  useEffect(() => {
+    if (!dragging) return;
+
+    const onMove = (ev: globalThis.PointerEvent) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const svgY = (ev.clientY - rect.top) * (H_TOTAL / rect.height);
+      // Clamp to main pane
+      const clampedY = Math.max(PAD_T, Math.min(svgY, H_MAIN - 4));
+      // pMin/pMax need to be in scope — recompute closure-safe below
+      const p = yToPrice(clampedY, pMinRef.current, pMaxRef.current);
+      const rounded = roundForPrice(p);
+      dragPriceRef.current = rounded;
+      setDragPrice(rounded);
+    };
+
+    const onUp = () => {
+      setDragging(false);
+      const committed = dragPriceRef.current;
+      if (committed != null && onPickEntry) onPickEntry(committed);
+      dragPriceRef.current = null;
+      setDragPrice(null);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [dragging, onPickEntry]);
+
+  // Keep pMin/pMax available to the effect without redeclaring the listener
+  const pMinRef = useRef(0);
+  const pMaxRef = useRef(1);
 
   if (loading) {
     return (
-      <div className="bg-[#0D0D0D] border border-neutral-500/10 h-[220px] flex items-center justify-center">
-        <p className="text-neutral-600 font-mono text-xs animate-pulse">Loading chart…</p>
+      <div className="bg-[#0A0A0A] border border-neutral-800 flex items-center justify-center" style={{ height: H_TOTAL }}>
+        <span className="text-neutral-600 font-mono text-[11px] animate-pulse">LOADING CHART…</span>
       </div>
     );
   }
 
   if (error || !candles.length) {
     return (
-      <div className="bg-[#0D0D0D] border border-neutral-500/10 h-[100px] flex items-center justify-center">
-        <p className="text-neutral-700 font-mono text-xs">Price chart unavailable for {symbol}</p>
+      <div className="bg-[#0A0A0A] border border-neutral-800 flex items-center justify-center" style={{ height: 80 }}>
+        <span className="text-neutral-700 font-mono text-[11px]">CHART UNAVAILABLE · {symbol}</span>
       </div>
     );
   }
 
-  // Price range with 4% padding
-  const allPrices = candles.flatMap((c) => [c.h, c.l]);
-  const overlayPrices = [entryPrice, liquidationPrice, targetPrice].filter(Boolean) as number[];
-  const raw = [...allPrices, ...overlayPrices];
-  const rawMin = Math.min(...raw);
-  const rawMax = Math.max(...raw);
-  const range  = rawMax - rawMin || 1;
-  const pMin   = rawMin - range * 0.04;
-  const pMax   = rawMax + range * 0.04;
+  // Price range — based on candles only, with small padding.
+  // Overlays (entry/liq/target) may fall outside this range when testnet and
+  // mainnet prices diverge; we show them as edge badges instead of stretching.
+  const allH = visible.map(c => c.h);
+  const allL = visible.map(c => c.l);
+  const candleMin = Math.min(...allL);
+  const candleMax = Math.max(...allH);
+  const candleRange = candleMax - candleMin || 1;
 
-  const total = candles.length;
-  const barW  = Math.max(1, (CHART_W / total) * 0.6);
+  // Only extend range to include overlays if they're within 15% of the candle range
+  const nearOverlays = [entryPrice, liquidationPrice, targetPrice, scenarioPrice]
+    .filter((p): p is number => p != null && p > 0)
+    .filter(p => p >= candleMin - candleRange * 0.15 && p <= candleMax + candleRange * 0.15);
 
-  // X-axis labels: -7d, -3d, now
-  const xLabels = [
-    { i: 0,             label: "7d ago" },
-    { i: Math.floor(total * 0.57), label: "3d ago" },
-    { i: total - 1,    label: "now"    },
-  ];
+  const rawMin = nearOverlays.length ? Math.min(candleMin, ...nearOverlays) : candleMin;
+  const rawMax = nearOverlays.length ? Math.max(candleMax, ...nearOverlays) : candleMax;
+  const pad    = (rawMax - rawMin) * 0.08 || 1;
+  const pMin   = rawMin - pad;
+  const pMax   = rawMax + pad;
+  pMinRef.current = pMin;
+  pMaxRef.current = pMax;
 
-  // Y-axis ticks
-  const yTicks = [0.2, 0.4, 0.6, 0.8].map((f) => pMin + f * (pMax - pMin));
+  // Volume
+  const maxVol = Math.max(...visible.map(c => c.v ?? 0), 1);
 
-  const fmtPrice = (p: number) =>
-    p >= 1000 ? `$${(p / 1000).toFixed(1)}k` : `$${p.toLocaleString("en-US", { maximumFractionDigits: 4 })}`;
-  const fmtTime  = (ms: number) =>
-    new Date(ms).toLocaleDateString("en-US", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  // Y-axis ticks (5 evenly spaced)
+  const yTicks = [0.1, 0.3, 0.5, 0.7, 0.9].map(f => pMin + f * (pMax - pMin));
+
+  // X-axis labels (4 evenly spaced)
+  const xLabelIdxs = [0, Math.floor(total * 0.33), Math.floor(total * 0.66), total - 1];
+
+  const pctChange = visible.length >= 2
+    ? ((visible[total - 1].c - visible[0].o) / visible[0].o) * 100
+    : 0;
+  const isUp = pctChange >= 0;
+
+  // Effective entry to draw (dragging previews live)
+  const effectiveEntry = dragging && dragPrice != null ? dragPrice : entryPrice;
+
+  const handleCandleClick = (c: PacificaCandle) => {
+    if (!onPickEntry) return;
+    onPickEntry(roundForPrice(c.c));
+  };
+
+  const handleEntryPointerDown = (e: ReactPointerEvent<SVGElement>) => {
+    if (!onPickEntry) return;
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    setDragging(true);
+    dragPriceRef.current = effectiveEntry ?? null;
+    setDragPrice(effectiveEntry ?? null);
+  };
 
   return (
-    <div className="bg-[#0D0D0D] border border-neutral-500/10 p-1 relative">
-      <p className="text-[10px] font-mono text-neutral-600 px-2 pt-1 pb-0.5">
-        {symbol} · 7-day price
-        {entryPrice && <span className="ml-2 text-orange-500/70">entry {fmtPrice(entryPrice)}</span>}
-        {liquidationPrice && <span className="ml-2 text-red-500/70">liq {fmtPrice(liquidationPrice)}</span>}
-      </p>
-
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className="w-full"
-        style={{ height: H }}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={() => setTooltip(null)}
-      >
-        {/* Grid lines */}
-        {yTicks.map((price, i) => (
-          <g key={i}>
-            <line
-              x1={PAD.left} y1={priceToY(price, pMin, pMax)}
-              x2={W - PAD.right} y2={priceToY(price, pMin, pMax)}
-              stroke="#222" strokeWidth={0.5}
-            />
-            <text
-              x={W - PAD.right + 4} y={priceToY(price, pMin, pMax) + 4}
-              fill="#444" fontSize={8} fontFamily="monospace"
+    <div className="bg-[#0A0A0A] border border-neutral-800 select-none relative">
+      {/* Header bar */}
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-neutral-800">
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-[11px] text-neutral-400 tracking-widest">{symbol}</span>
+          <span className={`font-mono text-[11px] font-bold ${isUp ? "text-green-400" : "text-red-400"}`}>
+            {isUp ? "▲" : "▼"} {Math.abs(pctChange).toFixed(2)}%
+          </span>
+          {effectiveEntry && (
+            <span className={`font-mono text-[10px] ${dragging ? "text-orange-400 font-bold" : "text-orange-500/80"}`}>
+              ENTRY {fmtP(effectiveEntry)}{dragging && " ◂ drag"}
+            </span>
+          )}
+          {liquidationPrice && !dragging && (
+            <span className="font-mono text-[10px] text-red-500/70">
+              LIQ {fmtP(liquidationPrice)}
+            </span>
+          )}
+          {scenarioLabel && scenarioPrice && !dragging && (
+            <span className="font-mono text-[10px] text-green-400/80">
+              {scenarioLabel.toUpperCase()} {fmtP(scenarioPrice)}
+            </span>
+          )}
+        </div>
+        {/* Timeframe selector */}
+        <div className="flex items-center gap-0.5">
+          {(["1D", "3D", "7D"] as TF[]).map(t => (
+            <button
+              key={t}
+              onClick={() => onTfChange(t)}
+              className={`font-mono text-[10px] px-2 py-0.5 tracking-wider transition-colors ${
+                tf === t
+                  ? "bg-orange-500 text-black font-bold"
+                  : "text-neutral-500 hover:text-neutral-300"
+              }`}
             >
-              {fmtPrice(price)}
-            </text>
-          </g>
-        ))}
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
 
-        {/* ±1σ band (if provided) */}
-        {sigmaBand != null && entryPrice != null && (
-          <rect
-            x={PAD.left}
-            y={priceToY(entryPrice + sigmaBand, pMin, pMax)}
-            width={CHART_W}
-            height={priceToY(entryPrice - sigmaBand, pMin, pMax) - priceToY(entryPrice + sigmaBand, pMin, pMax)}
-            fill="#f9731610"
-            stroke="none"
-          />
-        )}
+      {/* Hint strip */}
+      {onPickEntry && (
+        <div className="px-3 py-1 border-b border-neutral-900 bg-[#070707]">
+          <span className="font-mono text-[9px] text-neutral-600 tracking-wide">
+            CLICK CANDLE → SET ENTRY · DRAG <span className="text-orange-500/70">ORANGE LINE</span> → SCRUB PRICE
+          </span>
+        </div>
+      )}
 
-        {/* Candlesticks */}
-        {candles.map((c, i) => {
-          const x   = idxToX(i, total);
-          const yO  = priceToY(c.o, pMin, pMax);
-          const yC  = priceToY(c.c, pMin, pMax);
-          const yH  = priceToY(c.h, pMin, pMax);
-          const yL  = priceToY(c.l, pMin, pMax);
-          const isGreen = c.c >= c.o;
-          const col = isGreen ? "#22C55E" : "#EF4444";
-          const bodyTop    = Math.min(yO, yC);
-          const bodyHeight = Math.max(1, Math.abs(yC - yO));
+      {/* SVG chart */}
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H_TOTAL}`}
+        className="w-full block"
+        style={{ height: H_TOTAL, cursor: dragging ? "ns-resize" : "crosshair" }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => !dragging && setTooltip(null)}
+      >
+        {/* ── Background grid lines ── */}
+        {yTicks.map((price, i) => {
+          const y = toY(price, pMin, pMax);
           return (
-            <g key={i} shapeRendering="crispEdges">
-              {/* Wick */}
-              <line x1={x} y1={yH} x2={x} y2={yL} stroke={col} strokeWidth={0.8} opacity={0.7} />
-              {/* Body */}
-              <rect x={x - barW / 2} y={bodyTop} width={barW} height={bodyHeight} fill={col} opacity={0.85} />
+            <g key={i}>
+              <line
+                x1={PAD_L} y1={y} x2={W - PAD_R} y2={y}
+                stroke="#1A1A1A" strokeWidth={1}
+              />
+              <text
+                x={W - PAD_R + 5} y={y + 3.5}
+                fill="#4A4A4A" fontSize={9} fontFamily="monospace"
+              >
+                {fmtP(price)}
+              </text>
             </g>
           );
         })}
 
-        {/* Overlay: liquidation price (red dashed) */}
-        {liquidationPrice != null && liquidationPrice > pMin && liquidationPrice < pMax && (
-          <g>
-            <line
-              x1={PAD.left} y1={priceToY(liquidationPrice, pMin, pMax)}
-              x2={W - PAD.right} y2={priceToY(liquidationPrice, pMin, pMax)}
-              stroke="#EF4444" strokeWidth={1} strokeDasharray="4 3" opacity={0.8}
-            />
-            <text
-              x={W - PAD.right + 4} y={priceToY(liquidationPrice, pMin, pMax) - 3}
-              fill="#EF4444" fontSize={7} fontFamily="monospace"
-            >
-              LIQ
-            </text>
-          </g>
-        )}
-
-        {/* Overlay: entry price (orange solid) */}
-        {entryPrice != null && entryPrice > pMin && entryPrice < pMax && (
-          <g>
-            <line
-              x1={PAD.left} y1={priceToY(entryPrice, pMin, pMax)}
-              x2={W - PAD.right} y2={priceToY(entryPrice, pMin, pMax)}
-              stroke="#F97316" strokeWidth={1} opacity={0.9}
-            />
-            <text
-              x={W - PAD.right + 4} y={priceToY(entryPrice, pMin, pMax) - 3}
-              fill="#F97316" fontSize={7} fontFamily="monospace"
-            >
-              ENTRY
-            </text>
-          </g>
-        )}
-
-        {/* Overlay: target price (green dotted) */}
-        {targetPrice != null && targetPrice > pMin && targetPrice < pMax && (
-          <g>
-            <line
-              x1={PAD.left} y1={priceToY(targetPrice, pMin, pMax)}
-              x2={W - PAD.right} y2={priceToY(targetPrice, pMin, pMax)}
-              stroke="#22C55E" strokeWidth={1} strokeDasharray="2 4" opacity={0.7}
-            />
-            <text
-              x={W - PAD.right + 4} y={priceToY(targetPrice, pMin, pMax) - 3}
-              fill="#22C55E" fontSize={7} fontFamily="monospace"
-            >
-              TARGET
-            </text>
-          </g>
-        )}
-
-        {/* Crosshair */}
-        {tooltip && (
-          <line
-            x1={tooltip.candleX} y1={PAD.top}
-            x2={tooltip.candleX} y2={H - PAD.bottom}
-            stroke="#555" strokeWidth={0.5} strokeDasharray="2 2"
+        {/* ── σ band ── */}
+        {sigmaBand != null && effectiveEntry != null && (
+          <rect
+            x={PAD_L}
+            y={toY(effectiveEntry + sigmaBand, pMin, pMax)}
+            width={CHART_W}
+            height={Math.max(0, toY(effectiveEntry - sigmaBand, pMin, pMax) - toY(effectiveEntry + sigmaBand, pMin, pMax))}
+            fill="#F9731608"
           />
         )}
 
-        {/* X-axis labels */}
-        {xLabels.map(({ i, label }) => (
-          <text
-            key={label}
-            x={idxToX(i, total)}
-            y={H - PAD.bottom + 14}
-            fill="#444" fontSize={8} fontFamily="monospace"
-            textAnchor={i === 0 ? "start" : i === total - 1 ? "end" : "middle"}
-          >
-            {label}
-          </text>
-        ))}
+        {/* ── Candlesticks (click to set entry) ── */}
+        {visible.map((c, i) => {
+          const cx       = idxToX(i);
+          const yO       = toY(c.o, pMin, pMax);
+          const yC       = toY(c.c, pMin, pMax);
+          const yH       = toY(c.h, pMin, pMax);
+          const yL       = toY(c.l, pMin, pMax);
+          const green    = c.c >= c.o;
+          const col      = green ? "#22C55E" : "#EF4444";
+          const bodyTop  = Math.min(yO, yC);
+          const bodyH    = Math.max(1.5, Math.abs(yC - yO));
+          const isHovered = tooltip?.idx === i;
+
+          return (
+            <g key={i} shapeRendering="crispEdges">
+              {/* Wick */}
+              <line x1={cx} y1={yH} x2={cx} y2={yL} stroke={col} strokeWidth={1} opacity={isHovered ? 1 : 0.6} />
+              {/* Body */}
+              <rect
+                x={cx - barW / 2} y={bodyTop}
+                width={barW} height={bodyH}
+                fill={col}
+                opacity={isHovered ? 1 : 0.9}
+                stroke={isHovered ? "#F97316" : "none"}
+                strokeWidth={isHovered ? 1 : 0}
+              />
+              {/* Hit target (wider, invisible) for reliable click even on thin candles */}
+              {onPickEntry && (
+                <rect
+                  x={cx - Math.max(barW, 6) / 2}
+                  y={PAD_T}
+                  width={Math.max(barW, 6)}
+                  height={H_MAIN - PAD_T - 4}
+                  fill="transparent"
+                  style={{ cursor: "pointer" }}
+                  onClick={() => handleCandleClick(c)}
+                />
+              )}
+            </g>
+          );
+        })}
+
+        {/* ── Scenario exit preview (dashed green) ── */}
+        {scenarioPrice != null && scenarioPrice > 0 && scenarioPrice >= pMin && scenarioPrice <= pMax && (
+          <g>
+            <line
+              x1={PAD_L} y1={toY(scenarioPrice, pMin, pMax)}
+              x2={W - PAD_R} y2={toY(scenarioPrice, pMin, pMax)}
+              stroke="#22C55E" strokeWidth={1.3} strokeDasharray="4 3" opacity={0.9}
+            />
+            <rect
+              x={W - PAD_R} y={toY(scenarioPrice, pMin, pMax) - 7}
+              width={PAD_R - 2} height={12}
+              fill="#22C55E22"
+            />
+            <text
+              x={W - PAD_R + 4} y={toY(scenarioPrice, pMin, pMax) + 3}
+              fill="#22C55E" fontSize={8} fontFamily="monospace" fontWeight="bold"
+            >
+              {(scenarioLabel || "EXIT").toUpperCase()}
+            </text>
+          </g>
+        )}
+
+        {/* ── Overlay lines (in-range) and edge badges (out-of-range) ── */}
+        {(() => {
+          const items: Array<{ price: number; label: string; color: string; dash?: string; weight: number; draggable?: boolean }> = [];
+          if (liquidationPrice != null && liquidationPrice > 0) items.push({ price: liquidationPrice, label: "LIQ", color: "#EF4444", dash: "5 3", weight: 1.2 });
+          if (effectiveEntry != null && effectiveEntry > 0) items.push({ price: effectiveEntry, label: "ENTRY", color: "#F97316", weight: dragging ? 2.2 : 1.5, draggable: !!onPickEntry });
+          if (targetPrice != null && targetPrice > 0) items.push({ price: targetPrice, label: "TARGET", color: "#22C55E", dash: "3 5", weight: 1.2 });
+
+          return items.map((it, i) => {
+            if (it.price >= pMin && it.price <= pMax) {
+              const y = toY(it.price, pMin, pMax);
+              return (
+                <g key={i}>
+                  <line x1={PAD_L} y1={y} x2={W - PAD_R} y2={y}
+                    stroke={it.color} strokeWidth={it.weight} strokeDasharray={it.dash} opacity={0.9} />
+                  <rect x={W - PAD_R} y={y - 7} width={PAD_R - 2} height={12} fill={it.color + "20"} />
+                  <text x={W - PAD_R + 4} y={y + 3} fill={it.color} fontSize={8} fontFamily="monospace" fontWeight="bold">{it.label}</text>
+                  {/* Drag handle — invisible, wide, on top of the entry line */}
+                  {it.draggable && (
+                    <>
+                      <line
+                        x1={PAD_L} y1={y} x2={W - PAD_R} y2={y}
+                        stroke="transparent" strokeWidth={14}
+                        style={{ cursor: "ns-resize" }}
+                        onPointerDown={handleEntryPointerDown}
+                      />
+                      {/* Grip dots — visual affordance */}
+                      <circle cx={PAD_L + 8}   cy={y} r={2} fill={it.color} />
+                      <circle cx={PAD_L + 14}  cy={y} r={2} fill={it.color} />
+                      <circle cx={PAD_L + 20}  cy={y} r={2} fill={it.color} />
+                    </>
+                  )}
+                </g>
+              );
+            }
+            // Out of range — show edge badge
+            const above = it.price > pMax;
+            const y = above ? PAD_T + 2 : H_MAIN - 14;
+            return (
+              <g key={i}>
+                <rect x={W - PAD_R - 2} y={y - 1} width={PAD_R} height={12} fill={it.color + "25"} stroke={it.color} strokeWidth={0.5} />
+                <text x={W - PAD_R + 2} y={y + 8} fill={it.color} fontSize={7.5} fontFamily="monospace" fontWeight="bold">
+                  {it.label} {above ? "↑" : "↓"} {fmtP(it.price)}
+                </text>
+              </g>
+            );
+          });
+        })()}
+
+        {/* ── Main pane border ── */}
+        <line x1={PAD_L} y1={H_MAIN} x2={W - PAD_R} y2={H_MAIN} stroke="#1A1A1A" strokeWidth={1} />
+
+        {/* ── Volume bars ── */}
+        {visible.map((c, i) => {
+          const cx    = idxToX(i);
+          const volH  = ((c.v ?? 0) / maxVol) * (H_VOL - 6);
+          const green = c.c >= c.o;
+          return (
+            <rect
+              key={`v${i}`}
+              x={cx - barW / 2}
+              y={H_MAIN + (H_VOL - 6) - volH + 3}
+              width={barW}
+              height={Math.max(1, volH)}
+              fill={green ? "#22C55E" : "#EF4444"}
+              opacity={0.35}
+              shapeRendering="crispEdges"
+            />
+          );
+        })}
+
+        {/* VOL label */}
+        <text x={W - PAD_R + 5} y={H_MAIN + 14} fill="#333" fontSize={8} fontFamily="monospace">VOL</text>
+
+        {/* ── Crosshair ── */}
+        {tooltip && !dragging && (
+          <g>
+            <line
+              x1={tooltip.svgX} y1={PAD_T}
+              x2={tooltip.svgX} y2={H_MAIN + H_VOL}
+              stroke="#444" strokeWidth={0.7} strokeDasharray="2 3"
+            />
+          </g>
+        )}
+
+        {/* ── X-axis labels ── */}
+        {xLabelIdxs.map((idx, li) => {
+          if (idx >= total) return null;
+          const x = idxToX(idx);
+          const anchor = li === 0 ? "start" : li === xLabelIdxs.length - 1 ? "end" : "middle";
+          return (
+            <text
+              key={li}
+              x={x} y={H_MAIN + H_VOL + 14}
+              fill="#404040" fontSize={8} fontFamily="monospace" textAnchor={anchor}
+            >
+              {fmtTime(visible[idx].t, tf)}
+            </text>
+          );
+        })}
       </svg>
 
-      {/* Tooltip */}
-      {tooltip && (
+      {/* Tooltip overlay */}
+      {tooltip && !dragging && (
         <div
-          className="absolute top-8 bg-[#111] border border-neutral-500/20 px-2.5 py-1.5 font-mono text-[10px] text-neutral-300 pointer-events-none z-10"
-          style={{ left: Math.min(tooltip.x + 8, W - 130) }}
+          className="absolute pointer-events-none z-20 bg-[#111] border border-neutral-700 px-2.5 py-1.5 font-mono text-[10px] text-neutral-300"
+          style={{
+            top: 56,
+            left: "50%",
+            transform: "translateX(-50%)",
+            whiteSpace: "nowrap",
+          }}
         >
-          <p className="text-neutral-500 mb-0.5">{fmtTime(tooltip.candle.t)}</p>
-          <p>O: {fmtPrice(tooltip.candle.o)}  C: {fmtPrice(tooltip.candle.c)}</p>
-          <p>H: <span className="text-green-400">{fmtPrice(tooltip.candle.h)}</span>  L: <span className="text-red-400">{fmtPrice(tooltip.candle.l)}</span></p>
+          <span className="text-neutral-500 mr-2">{fmtTime(tooltip.candle.t, tf)}</span>
+          <span className="mr-2">O:{fmtP(tooltip.candle.o)}</span>
+          <span className="text-green-400 mr-2">H:{fmtP(tooltip.candle.h)}</span>
+          <span className="text-red-400 mr-2">L:{fmtP(tooltip.candle.l)}</span>
+          <span className="text-orange-400 mr-2">C:{fmtP(tooltip.candle.c)}</span>
+          {onPickEntry && <span className="text-neutral-600">· click to pin entry</span>}
+        </div>
+      )}
+
+      {/* Drag tooltip */}
+      {dragging && dragPrice != null && (
+        <div
+          className="absolute pointer-events-none z-20 bg-[#1a0f05] border border-orange-500 px-2.5 py-1.5 font-mono text-[10px] text-orange-300"
+          style={{ top: 56, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap" }}
+        >
+          ENTRY → <span className="text-orange-400 font-bold">{fmtP(dragPrice)}</span>
+          <span className="text-neutral-500 ml-2">release to commit</span>
         </div>
       )}
     </div>

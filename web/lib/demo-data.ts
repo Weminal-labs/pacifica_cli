@@ -86,45 +86,7 @@ export const DEMO_SIGNALS: HighRepSignal[] = [
   },
 ];
 
-export const DEMO_REP: ReputationEntry[] = [
-  {
-    rank: 1,
-    trader_id: "0xa1b2c3d4e5f6",
-    overall_rep_score: 94,
-    overall_win_rate: 0.78,
-    closed_trades: 87,
-    top_patterns: ["negative_funding", "rising_oi"],
-  },
-  {
-    rank: 2,
-    trader_id: "0xb2c3d4e5f6a1",
-    overall_rep_score: 87,
-    overall_win_rate: 0.71,
-    closed_trades: 64,
-    top_patterns: ["whale_activity", "bullish_momentum"],
-  },
-  {
-    rank: 3,
-    trader_id: "0xc3d4e5f6a1b2",
-    overall_rep_score: 79,
-    overall_win_rate: 0.67,
-    closed_trades: 43,
-    top_patterns: ["high_buy_pressure"],
-  },
-  {
-    rank: 4,
-    trader_id: "0xd4e5f6a1b2c3",
-    overall_rep_score: 71,
-    overall_win_rate: 0.63,
-    closed_trades: 31,
-    top_patterns: ["negative_funding"],
-  },
-  {
-    rank: 5,
-    trader_id: "0xe5f6a1b2c3d4",
-    overall_rep_score: 58,
-    overall_win_rate: 0.55,
-    closed_trades: 18,
-    top_patterns: ["rising_oi"],
-  },
-];
+// Fallback used when the intelligence API is offline.
+// Shows an empty leaderboard rather than fake addresses — real data comes from
+// the API server which fetches live from test-api.pacifica.fi/api/v1/leaderboard.
+export const DEMO_REP: ReputationEntry[] = [];

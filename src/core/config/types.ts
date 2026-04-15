@@ -6,14 +6,34 @@
 // signs all trading operations via Ed25519 signatures.
 // ---------------------------------------------------------------------------
 
+/**
+ * Autonomy level controls how much freedom an AI agent has:
+ *   0 READ_ONLY   — no writes at all; agent can only read market data
+ *   1 PAPER       — only paper trades (pacifica paper *); no real orders
+ *   2 CONFIRM     — every write action requires explicit human confirmation
+ *   3 GUARDED     — enforces all limits; skips confirmation for small orders
+ *   4 AUTONOMOUS  — enforces limits only; no confirmations
+ */
+export type AutonomyLevel = 0 | 1 | 2 | 3 | 4;
+
 export interface AgentConfig {
   enabled: boolean;
+  autonomy_level: AutonomyLevel;
   daily_spending_limit: number;  // USD
   max_order_size: number;        // USD
   max_leverage: number;
   allowed_actions: string[];
   blocked_actions: string[];
   require_confirmation_above: number; // USD
+  /** Whitelist: if non-empty, only these symbols may be traded */
+  allowed_symbols?: string[];
+  /** Blacklist: these symbols are always blocked regardless of other config */
+  forbidden_symbols?: string[];
+  /**
+   * Time window (UTC) during which trading is permitted.
+   * Both values are "HH:MM" strings, e.g. { from: "09:00", to: "17:00" }
+   */
+  trade_window?: { from: string; to: string };
 }
 
 export interface ArbConfig {
@@ -80,6 +100,7 @@ export const DEFAULT_CONFIG: PacificaConfig = {
   },
   agent: {
     enabled: true,
+    autonomy_level: 3,
     daily_spending_limit: 5000,
     max_order_size: 2000,
     max_leverage: 5,

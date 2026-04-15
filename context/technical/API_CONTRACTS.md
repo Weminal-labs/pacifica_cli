@@ -136,3 +136,136 @@ Testnet: `wss://test-ws.pacifica.fi/ws` | Mainnet: `wss://ws.pacifica.fi/ws`
 | `account_positions` | Position updates (authenticated) | On change |
 | `account_order_updates` | Order fill/cancel events (authenticated) | On event |
 
+---
+
+## Pacifica DEX Proxy Routes (M12)
+
+All routes proxy to https://test-api.pacifica.fi/api/v1. GET only (no auth required).
+
+### GET /api/pacifica/account/:address
+Returns master account equity and balance details.
+```json
+{
+  "address": "string",
+  "balance": "string",
+  "account_equity": "string",
+  "available_to_spend": "string",
+  "available_to_withdraw": "string",
+  "positions_count": "number",
+  "orders_count": "number",
+  "fee_level": "number",
+  "maker_fee": "string",
+  "taker_fee": "string",
+  "cross_mmr": "string"
+}
+```
+
+### GET /api/pacifica/subaccounts/:address
+```json
+{
+  "subaccounts": [
+    {
+      "address": "string",
+      "balance": "string",
+      "pending_balance": "string",
+      "fee_level": "number",
+      "fee_mode": "string",
+      "created_at": "number"
+    }
+  ]
+}
+```
+
+### GET /api/pacifica/positions/:address
+Fans out across master + all subaccounts.
+```json
+{
+  "accounts": [
+    {
+      "address": "string",
+      "is_master": "boolean",
+      "positions": [
+        {
+          "symbol": "string",
+          "side": "long | short",
+          "size": "string",
+          "entry_price": "string",
+          "mark_price": "string",
+          "unrealized_pnl": "string",
+          "liquidation_price": "string",
+          "leverage": "string",
+          "margin_mode": "cross | isolated"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### GET /api/portfolio/:address
+Composite endpoint — account + subaccounts + positions + intelligence overlay. Primary endpoint for the web portfolio page. 10s cache TTL.
+```json
+{
+  "master": {
+    "address": "string",
+    "balance": "string",
+    "account_equity": "string",
+    "available_to_spend": "string",
+    "available_to_withdraw": "string"
+  },
+  "accounts": [
+    {
+      "address": "string",
+      "label": "string (Master or null for subaccounts)",
+      "balance": "string",
+      "equity": "string",
+      "positions": [
+        {
+          "symbol": "string",
+          "side": "long | short",
+          "size": "string",
+          "entry_price": "string",
+          "mark_price": "string",
+          "unrealized_pnl": "string",
+          "liquidation_price": "string",
+          "leverage": "string",
+          "margin_mode": "cross | isolated",
+          "overlay": {
+            "pattern_match": {
+              "pattern_name": "string",
+              "win_rate": "number",
+              "pattern_id": "string"
+            },
+            "rep_signal": {
+              "count": "number",
+              "top_traders": ["string"]
+            },
+            "funding_watch": {
+              "current_rate": "string",
+              "trend": "rising | falling | flat",
+              "next_settlement_ms": "number"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "reputation": "TraderReputation | null",
+  "stale": "boolean",
+  "generated_at": "string"
+}
+```
+
+### GET /api/pacifica/funding_history
+Query params: `symbol` (required), `hours` (default 24)
+```json
+{
+  "symbol": "string",
+  "points": [
+    {
+      "t": "number",
+      "rate": "string"
+    }
+  ]
+}
+```

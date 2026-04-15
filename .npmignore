@@ -1,0 +1,8 @@
+web/
+test/
+plans/
+context/
+src/
+.claude/
+*.md
+!README.md

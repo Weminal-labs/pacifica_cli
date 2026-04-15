@@ -13,10 +13,10 @@ Mở **3 terminal tab**:
 **Tab 1 — Intelligence API:**
 ```bash
 cd pacifica_cli
-node dist/cli.js intelligence seed --count 80 --clear
 node dist/cli.js intelligence serve
 ```
 Kết quả đúng: `Pacifica Intelligence API running on http://localhost:4242`
+(Reputation data is pulled live from test-api.pacifica.fi — no seed needed)
 
 **Tab 2 — Web Dashboard:**
 ```bash

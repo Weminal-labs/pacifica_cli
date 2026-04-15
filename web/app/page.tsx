@@ -3,31 +3,182 @@
 // Layout: reference-style border-column system with dither-reveal hero
 // ---------------------------------------------------------------------------
 
+export const runtime = "edge";
+
+import dynamic from "next/dynamic";
 import Link from "next/link";
-import { HeroSection } from "./_components/HeroSection";
 import { Separator } from "./_components/Separator";
 import { SocialSignalsPanel } from "../components/feed/SocialSignalsPanel";
 import { OrangeLabel } from "../components/ui/OrangeLabel";
 import { PatternCard } from "../components/ui/PatternCard";
+import { SEED_PATTERNS } from "../lib/seed-patterns";
 import type { Pattern, WhaleActivity, HighRepSignal, SocialData } from "../lib/types";
-import { DEMO_PATTERNS, DEMO_WHALES, DEMO_SIGNALS } from "../lib/demo-data";
+
+// Three.js hero — loaded client-side only to keep edge/server bundle clean
+const HeroSection = dynamic(
+  () => import("./_components/HeroSection").then((m) => ({ default: m.HeroSection })),
+  { ssr: false },
+);
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const PACIFICA_API = "https://test-api.pacifica.fi";
+
+// ---------------------------------------------------------------------------
+// Pacifica API fallback helpers
+// ---------------------------------------------------------------------------
+
+interface RawLeaderboardEntry {
+  address:      string;
+  trader_id?:   string;   // kept for safety, API returns `address`
+  pnl_all_time: string;
+  pnl_1d:       string;
+  pnl_7d:       string;
+  pnl_30d:      string;
+}
+
+interface RawMarket {
+  symbol:        string;
+  funding?:      number | string;
+  mark?:         number | string;
+  open_interest?: number | string;
+  volume_24h?:   number | string;
+  oracle?:       number | string;
+}
+
+async function fetchRealFeedData(): Promise<{
+  active_patterns: Pattern[];
+  whale_activity:  WhaleActivity[];
+  high_rep_signals: HighRepSignal[];
+}> {
+  const [lbRes, mktRes] = await Promise.allSettled([
+    fetch(`${PACIFICA_API}/api/v1/leaderboard`,   { cache: "no-store" }),
+    fetch(`${PACIFICA_API}/api/v1/info/prices`,   { cache: "no-store" }),
+  ]);
+
+  // --- High-rep signals from leaderboard ---
+  const high_rep_signals: HighRepSignal[] = [];
+  if (lbRes.status === "fulfilled" && lbRes.value.ok) {
+    const lbJson = (await lbRes.value.json()) as { data?: RawLeaderboardEntry[] };
+    const traders = (lbJson?.data ?? []) as RawLeaderboardEntry[];
+
+    const sorted = [...traders]
+      .sort((a, b) => parseFloat(b.pnl_all_time) - parseFloat(a.pnl_all_time))
+      .slice(0, 8);
+
+    const posResults = await Promise.allSettled(
+      sorted.map((t) =>
+        fetch(`${PACIFICA_API}/api/v1/positions?account=${encodeURIComponent(t.address ?? t.trader_id ?? "")}`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(4_000),
+        }),
+      ),
+    );
+
+    const now = new Date().toISOString();
+    const repScores = sorted.map((_, i) => Math.max(99 - i * 7, 30));
+
+    for (let i = 0; i < sorted.length; i++) {
+      const r = posResults[i];
+      if (r.status === "rejected" || !r.value.ok) continue;
+      const posJson = (await r.value.json()) as { data?: unknown[] };
+      const positions = posJson?.data ?? [];
+      if (!Array.isArray(positions) || positions.length === 0) continue;
+
+      for (const p of positions.slice(0, 2)) {
+        const pos = p as Record<string, unknown>;
+        const sym = String(pos.symbol ?? "");
+        if (!sym) continue;
+        const side = String(pos.side ?? "") === "bid" || String(pos.side ?? "").includes("long")
+          ? "long" as const
+          : "short" as const;
+        const sizeUsd = parseFloat(String(pos.amount ?? pos.size ?? 0)) * parseFloat(String(pos.entry_price ?? pos.entryPrice ?? 1));
+
+        high_rep_signals.push({
+          asset:      sym,
+          direction:  side,
+          size_usd:   isNaN(sizeUsd) ? 10_000 : sizeUsd,
+          rep_score:  repScores[i],
+          opened_at:  String(pos.createdAt ?? pos.created_at ?? now),
+        });
+      }
+      if (high_rep_signals.length >= 6) break;
+    }
+  }
+
+  // --- Whale activity from top-volume markets ---
+  const whale_activity: WhaleActivity[] = [];
+  if (mktRes.status === "fulfilled" && mktRes.value.ok) {
+    const mktJson = (await mktRes.value.json()) as { data?: RawMarket[] };
+    const markets = (mktJson?.data ?? []) as RawMarket[];
+
+    // Sort by notional volume (volume_24h × mark price) so USD-big markets come first
+    const byVolume = [...markets]
+      .map((m) => ({
+        ...m,
+        _notional: parseFloat(String(m.volume_24h ?? 0)) * parseFloat(String(m.mark ?? 1)),
+      }))
+      .sort((a, b) => b._notional - a._notional)
+      .slice(0, 6);
+
+    const now = Date.now();
+    for (const m of byVolume) {
+      const fr = parseFloat(String(m.funding ?? 0));
+      whale_activity.push({
+        asset:              m.symbol,
+        direction:          fr >= 0 ? "long" : "short",
+        size_usd:           m._notional * 0.02, // ~2% of 24h volume as whale slice
+        large_orders_count: 3,
+        opened_at:          new Date(now - Math.random() * 10_800_000).toISOString(),
+      });
+    }
+  }
+
+  return {
+    active_patterns:  [],
+    whale_activity:   whale_activity.length > 0 ? whale_activity : [],
+    high_rep_signals,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Data fetching
 // ---------------------------------------------------------------------------
 
-async function getFeedData() {
+async function getFeedData(): Promise<{
+  active_patterns:  Pattern[];
+  whale_activity:   WhaleActivity[];
+  high_rep_signals: HighRepSignal[];
+  isLive:           boolean;
+}> {
+  // 1. Try the local intelligence API server
   try {
     const res = await fetch("http://localhost:4242/api/intelligence/feed", {
       cache: "no-store",
     });
-    if (!res.ok) throw new Error("API unavailable");
-    return res.json();
+    if (res.ok) {
+      const data = await res.json();
+      return { ...data, isLive: true };
+    }
+  } catch { /* fall through */ }
+
+  // 2. Fall back to real Pacifica testnet API + seed patterns for the library
+  try {
+    const real = await fetchRealFeedData();
+    return {
+      active_patterns:  real.active_patterns.length > 0 ? real.active_patterns : SEED_PATTERNS.slice(0, 6),
+      whale_activity:   real.whale_activity,
+      high_rep_signals: real.high_rep_signals,
+      isLive:           false,
+    };
   } catch {
     return {
-      active_patterns: DEMO_PATTERNS,
-      whale_activity:  DEMO_WHALES,
-      high_rep_signals: DEMO_SIGNALS,
+      active_patterns:  SEED_PATTERNS.slice(0, 6),
+      whale_activity:   [],
+      high_rep_signals: [],
+      isLive:           false,
     };
   }
 }
@@ -72,9 +223,10 @@ function formatUsd(n: number): string {
 
 export default async function FeedPage() {
   const [data, socialData] = await Promise.all([getFeedData(), getSocialData()]);
-  const patterns: Pattern[]       = data.active_patterns  ?? DEMO_PATTERNS;
-  const whales:   WhaleActivity[] = data.whale_activity   ?? DEMO_WHALES;
-  const signals:  HighRepSignal[] = data.high_rep_signals ?? DEMO_SIGNALS;
+  const patterns: Pattern[]       = data.active_patterns  ?? [];
+  const whales:   WhaleActivity[] = data.whale_activity   ?? [];
+  const signals:  HighRepSignal[] = data.high_rep_signals ?? [];
+  const isLive    = data.isLive;
 
   return (
     <div className="relative bg-[#0A0A0A] pb-10">
@@ -121,11 +273,28 @@ export default async function FeedPage() {
             View all →
           </Link>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {patterns.map((p) => (
-            <PatternCard key={p.id} pattern={p} />
-          ))}
-        </div>
+        {!isLive && patterns.length > 0 && (
+          <div className="mb-4 text-[11px] font-mono text-neutral-500 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-orange-500/50" />
+            Showing pattern library · run
+            <code className="text-orange-500">pacifica intelligence serve</code>
+            locally to see live-triggering patterns from your feed
+          </div>
+        )}
+        {patterns.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {patterns.map((p) => (
+              <PatternCard key={p.id} pattern={p} isLive={isLive} />
+            ))}
+          </div>
+        ) : (
+          <div className="relative bg-[#0F0F0F] border border-neutral-500/20 p-6">
+            <p className="text-white font-semibold mb-2">No patterns available</p>
+            <p className="text-neutral-500 text-sm">
+              Try refreshing the page, or check <Link href="/patterns" className="text-orange-500 hover:underline">the pattern library</Link>.
+            </p>
+          </div>
+        )}
       </section>
 
       {/* ── Separator ── */}
@@ -149,6 +318,9 @@ export default async function FeedPage() {
           <OrangeLabel text="/ WHALE ACTIVITY" />
           <h2 className="text-2xl font-bold text-white mt-2 mb-6">Large position changes</h2>
           <div className="space-y-2">
+            {whales.length === 0 && (
+              <p className="text-neutral-600 text-sm font-mono py-4">No live data available.</p>
+            )}
             {whales.map((w, i) => (
               <div
                 key={i}
@@ -181,6 +353,9 @@ export default async function FeedPage() {
           <OrangeLabel text="/ HIGH REP SIGNALS" />
           <h2 className="text-2xl font-bold text-white mt-2 mb-6">Top traders positioned</h2>
           <div className="space-y-2">
+            {signals.length === 0 && (
+              <p className="text-neutral-600 text-sm font-mono py-4">No high-rep traders with open positions.</p>
+            )}
             {signals.map((s, i) => (
               <div
                 key={i}

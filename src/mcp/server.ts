@@ -18,6 +18,7 @@
 // is recorded by the AgentActionLogger / SpendingTracker for auditability.
 // ---------------------------------------------------------------------------
 
+import { createHash } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod/v4";
@@ -49,7 +50,8 @@ import type {
 import { loadPatterns, loadRecords, loadReputation } from "../core/intelligence/store.js";
 import type { DetectedPattern, ConfirmedSignal } from "../core/intelligence/schema.js";
 import { fetchSocialContext } from "../core/intelligence/social.js";
-import { scoreConfidence, detectPatterns } from "../core/intelligence/engine.js";
+import { scoreConfidence, detectPatterns, scanForActiveSignals } from "../core/intelligence/engine.js";
+import { computeReputation } from "../core/intelligence/reputation.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -994,6 +996,7 @@ function registerWriteTools(
           action: "place_order",
           orderSizeUsd: estimatedUsd,
           leverage,
+          symbol,
         });
 
         if (!check.allowed) {
@@ -1197,7 +1200,7 @@ function registerWriteTools(
         // -----------------------------------------------------------------
         // 1. Guardrail check
         // -----------------------------------------------------------------
-        const check = guardrails.check({ action: "close_position" });
+        const check = guardrails.check({ action: "close_position", symbol });
 
         if (!check.allowed) {
           await logger.logRejection({
@@ -2125,6 +2128,204 @@ function registerM11IntelligenceTools(
 }
 
 // ---------------------------------------------------------------------------
+// New Tools: simulate, leaderboard, my_intelligence
+// ---------------------------------------------------------------------------
+
+const MAINTENANCE_MARGIN_RATE = 0.005;
+
+function registerNewTools(
+  server: McpServer,
+  client: PacificaClient,
+  config: PacificaConfig,
+): void {
+  // -----------------------------------------------------------------------
+  // pacifica_simulate
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_simulate",
+    "Simulate a trade: calculate liquidation price, P&L at different price scenarios, and funding cost over time. No order is placed. Use this before placing any order to understand the risk.",
+    {
+      side: z.enum(["long", "short"]).describe("Trade direction"),
+      market: z.string().describe("Market symbol, e.g. ETH-USDC-PERP or ETH"),
+      size_usd: z.number().positive().describe("Notional position size in USD"),
+      leverage: z.number().min(1).max(100).optional().describe("Leverage (default 5)"),
+      entry_price: z.number().positive().optional().describe("Override entry price; defaults to current mark price"),
+    },
+    async ({ side, market, size_usd, leverage = 5, entry_price }) => {
+      try {
+        const symbol = market.toUpperCase().includes("-USDC-PERP")
+          ? market.toUpperCase()
+          : `${market.toUpperCase()}-USDC-PERP`;
+
+        const markets = await client.getMarkets();
+        const mkt = markets.find((m) => m.symbol === symbol);
+        if (!mkt) {
+          return fail(`Market "${symbol}" not found`);
+        }
+
+        const ep = entry_price ?? mkt.markPrice ?? mkt.price;
+        const fundingRate = mkt.fundingRate;
+        const marginUsd = size_usd / leverage;
+
+        const liqPrice = side === "long"
+          ? ep * (1 - 1 / leverage + MAINTENANCE_MARGIN_RATE)
+          : ep * (1 + 1 / leverage - MAINTENANCE_MARGIN_RATE);
+        const liqPct = ((liqPrice - ep) / ep) * 100;
+
+        const scenarios = [-0.20, -0.10, -0.05, 0.05, 0.10, 0.20].map((f) => {
+          const targetPrice = ep * (1 + f);
+          const priceDelta = side === "long"
+            ? (targetPrice - ep) / ep
+            : (ep - targetPrice) / ep;
+          return {
+            price_change_pct: f * 100,
+            target_price: targetPrice,
+            pnl_usd: priceDelta * size_usd,
+            margin_return_pct: (priceDelta * size_usd / marginUsd) * 100,
+          };
+        });
+
+        const rawFundingImpact = side === "long" ? -fundingRate : fundingRate;
+        const fundingPerInterval = rawFundingImpact * size_usd;
+
+        // Intelligence signal check
+        let signal_tip: string | null = null;
+        try {
+          const patterns = await loadPatterns();
+          if (patterns.length > 0) {
+            const signals = await scanForActiveSignals(client, patterns);
+            const match = signals.find((s) => s.asset === symbol && s.direction === side);
+            if (match) {
+              signal_tip = `Pattern match: "${match.pattern.name}" (${(match.pattern.win_rate * 100).toFixed(1)}% win rate, n=${match.pattern.sample_size})`;
+            }
+          }
+        } catch { /* optional */ }
+
+        return ok({
+          market: symbol, side, notional_usd: size_usd, leverage,
+          entry_price: ep,
+          liquidation_price: liqPrice,
+          liquidation_distance_pct: liqPct,
+          margin_usd: marginUsd,
+          funding_rate_per_8h: fundingRate,
+          funding_8h_usd: fundingPerInterval,
+          funding_24h_usd: fundingPerInterval * 3,
+          funding_7d_usd: fundingPerInterval * 21,
+          funding_direction: fundingPerInterval >= 0 ? "earn" : "pay",
+          scenarios,
+          signal_tip,
+        });
+      } catch (err) {
+        return fail(`Simulation error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_leaderboard
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_leaderboard",
+    "Get the live Pacifica testnet leaderboard with 1D/7D/30D/all-time P&L for each trader. Use this to identify top-performing traders whose strategies and patterns to monitor.",
+    {
+      limit: z.number().int().positive().max(50).optional().describe("Number of traders (default 10, max 50)"),
+    },
+    async ({ limit = 10 }) => {
+      try {
+        const traders = await client.getLeaderboard(limit);
+        return ok({
+          leaderboard: traders,
+          count: traders.length,
+          source: "test-api.pacifica.fi",
+        });
+      } catch (err) {
+        return fail(`Leaderboard error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // pacifica_my_intelligence
+  // -----------------------------------------------------------------------
+  server.tool(
+    "pacifica_my_intelligence",
+    "Get your personal trading intelligence profile: which market conditions you perform best in, your rep score, win rate by condition, and how you compare to the top-10 leaderboard traders. Call this before deciding whether to trade.",
+    {},
+    async () => {
+      try {
+        const myTraderId = createHash("sha256")
+          .update(config.private_key)
+          .digest("hex");
+
+        const allRecords = await loadRecords();
+        const myRecords = allRecords.filter((r) => r.trader_id === myTraderId);
+
+        if (myRecords.length === 0) {
+          return ok({
+            message: "No intelligence records found for your wallet. Records are captured automatically when you trade via pacifica trade.",
+            wallet: (config as unknown as { signer?: { publicKey?: string } }).signer?.publicKey ?? "unknown",
+            total_records: 0,
+          });
+        }
+
+        const repMap = computeReputation(myRecords);
+        const myRep = repMap.get(myTraderId);
+        const myPatterns = detectPatterns(myRecords);
+
+        const byMarket = new Map<string, { total: number; wins: number; pnl_sum: number }>();
+        for (const r of myRecords.filter((r) => r.outcome !== undefined)) {
+          const m = byMarket.get(r.asset) ?? { total: 0, wins: 0, pnl_sum: 0 };
+          m.total++;
+          if (r.outcome!.profitable) m.wins++;
+          m.pnl_sum += r.outcome!.pnl_pct;
+          byMarket.set(r.asset, m);
+        }
+
+        let lbAvgScore: number | undefined;
+        try {
+          const lb = await client.getLeaderboard(10);
+          lbAvgScore = Math.round(lb.reduce((s, t) => s + t.overall_rep_score, 0) / lb.length);
+        } catch { /* optional */ }
+
+        return ok({
+          trader_id: myTraderId.slice(0, 12),
+          total_records: myRecords.length,
+          closed_trades: myRep?.closed_trades ?? 0,
+          overall_rep_score: myRep?.overall_rep_score ?? 0,
+          overall_win_rate: myRep?.overall_win_rate ?? 0,
+          top_patterns: myRep?.top_patterns ?? [],
+          strongest_conditions: Object.values(myRep?.accuracy_by_condition ?? {})
+            .filter((c) => c.total_trades >= 2)
+            .sort((a, b) => b.win_rate - a.win_rate)
+            .slice(0, 5),
+          top_markets: [...byMarket.entries()]
+            .sort((a, b) => b[1].total - a[1].total)
+            .slice(0, 5)
+            .map(([asset, m]) => ({
+              asset,
+              total_trades: m.total,
+              win_rate: m.total > 0 ? m.wins / m.total : 0,
+              avg_pnl_pct: m.total > 0 ? m.pnl_sum / m.total : 0,
+            })),
+          personal_patterns: myPatterns.map((p) => ({
+            name: p.name,
+            win_rate: p.win_rate,
+            sample_size: p.sample_size,
+            avg_pnl_pct: p.avg_pnl_pct,
+          })),
+          leaderboard_avg_score: lbAvgScore ?? null,
+          recommendation: myRep && myRep.top_patterns.length > 0
+            ? `Your highest win-rate condition is "${myRep.top_patterns[0]}". Prioritize trades where this condition is active.`
+            : "Trade more to build your intelligence profile.",
+        });
+      } catch (err) {
+        return fail(`My intelligence error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
 // M12 Social Intelligence Tool (1) — pacifica_social_context
 // ---------------------------------------------------------------------------
 
@@ -2249,6 +2450,7 @@ async function main(): Promise<void> {
   registerIntelligenceTools(server, client, alertManager);
   registerM11IntelligenceTools(server, client);
   registerSocialIntelligenceTool(server, client, config);
+  registerNewTools(server, client, config);
   registerWriteTools(server, client, config, guardrails, spendingTracker, logger, smartManager);
   registerArbTools(server, client, config, guardrails, spendingTracker, logger);
 

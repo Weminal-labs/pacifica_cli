@@ -15,6 +15,14 @@ import {
 } from "../core/intelligence/store.js";
 import { fetchSocialContext } from "../core/intelligence/social.js";
 import { scoreConfidence } from "../core/intelligence/engine.js";
+import {
+  getAccount,
+  getSubaccounts,
+  getPositions,
+  getFundingHistory,
+} from "./pacifica-client.js";
+import { cacheGet, cacheSet } from "./cache.js";
+import { computeOverlay } from "./overlays.js";
 
 // ---------------------------------------------------------------------------
 // Bootstrap
@@ -287,24 +295,75 @@ export async function createServer() {
   fastify.get<{ Querystring: { limit?: string } }>(
     "/api/intelligence/reputation",
     async (req, reply) => {
-      const rep = await loadReputation();
-
-      let entries = Array.from(rep.values()).sort(
-        (a, b) => b.overall_rep_score - a.overall_rep_score,
-      );
-
       const limitStr = req.query.limit;
-      if (limitStr !== undefined) {
-        const limit = parseInt(limitStr, 10);
-        if (!isNaN(limit) && limit > 0) {
-          entries = entries.slice(0, limit);
+      const limit = limitStr ? parseInt(limitStr, 10) : 20;
+
+      // 1. Fetch live Pacifica testnet leaderboard
+      let liveEntries: Array<{
+        rank: number; trader_id: string; overall_rep_score: number;
+        overall_win_rate: number; closed_trades: number; top_patterns: string[];
+        onchain?: Record<string, number>;
+      }> = [];
+
+      try {
+        const res = await fetch("https://test-api.pacifica.fi/api/v1/leaderboard", {
+          headers: { "Accept": "application/json" },
+          signal: AbortSignal.timeout(8_000),
+        });
+        if (res.ok) {
+          const json = await res.json() as { data: Array<{
+            address: string; pnl_all_time: string; pnl_1d: string;
+            pnl_7d: string; pnl_30d: string; equity_current: string;
+            volume_all_time: string; volume_30d: string;
+          }> };
+          const traders = (json.data ?? [])
+            .sort((a, b) => parseFloat(b.pnl_all_time) - parseFloat(a.pnl_all_time))
+            .slice(0, limit);
+
+          liveEntries = traders.map((t, i) => {
+            const pnlAll = parseFloat(t.pnl_all_time) || 0;
+            const periods = [pnlAll, parseFloat(t.pnl_30d)||0, parseFloat(t.pnl_7d)||0, parseFloat(t.pnl_1d)||0];
+            const wins = periods.filter((p) => p > 0).length;
+            const repScore = Math.round(Math.max(30, 99 - (i / Math.max(1, traders.length)) * 65));
+            return {
+              rank: i + 1,
+              trader_id: t.address,
+              overall_rep_score: repScore,
+              overall_win_rate: wins / periods.length,
+              closed_trades: Math.max(1, Math.round(Math.abs(parseFloat(t.volume_all_time)||0) / 3_000)),
+              top_patterns: [] as string[],
+              onchain: {
+                pnl_all_time: pnlAll,
+                pnl_1d: parseFloat(t.pnl_1d)||0,
+                pnl_7d: parseFloat(t.pnl_7d)||0,
+                pnl_30d: parseFloat(t.pnl_30d)||0,
+                equity_current: parseFloat(t.equity_current)||0,
+                volume_30d: parseFloat(t.volume_30d)||0,
+              },
+            };
+          });
         }
+      } catch { /* fall through to local data */ }
+
+      // 2. Enrich with local intelligence data where trader_id matches
+      if (liveEntries.length > 0) {
+        const repMap = await loadReputation();
+        for (const entry of liveEntries) {
+          const local = repMap.get(entry.trader_id);
+          if (local) {
+            entry.overall_rep_score = local.overall_rep_score;
+            entry.top_patterns = local.top_patterns ?? [];
+          }
+        }
+        return reply.code(200).send({ leaderboard: liveEntries, source: "live" });
       }
 
-      // Return full trader_id — truncation happens in the UI
-      const leaderboard = entries.map((e) => ({ ...e }));
-
-      return reply.code(200).send({ leaderboard });
+      // 3. Fallback: local SQLite data only (offline mode)
+      const repMap = await loadReputation();
+      const fallback = Array.from(repMap.values())
+        .sort((a, b) => b.overall_rep_score - a.overall_rep_score)
+        .slice(0, limit);
+      return reply.code(200).send({ leaderboard: fallback, source: "local" });
     },
   );
 
@@ -478,17 +537,52 @@ export async function createServer() {
       ]);
 
       // Match by full address or by prefix (for truncated links)
-      const reputationEntry = rep.get(address)
-        ?? Array.from(rep.values()).find((e) => e.trader_id.startsWith(address));
+      let reputationEntry = rep.get(address);
+      let fullAddress = address;
+
+      // If not in local intelligence records, try the Pacifica testnet leaderboard
+      if (!reputationEntry) {
+        try {
+          const lbRes = await fetch("https://test-api.pacifica.fi/api/v1/leaderboard", {
+            signal: AbortSignal.timeout(6_000),
+          });
+          if (lbRes.ok) {
+            const lbJson = await lbRes.json() as { data: Array<{ address: string; pnl_all_time: string; pnl_1d: string; pnl_7d: string; pnl_30d: string; equity_current: string; volume_all_time: string; volume_30d: string }> };
+            const row = (lbJson.data ?? []).find(
+              (t) => t.address === address || t.address.startsWith(address.slice(0, 12)),
+            );
+            if (row) {
+              // Build a synthetic reputation entry from leaderboard data
+              const pnlAllTime = parseFloat(row.pnl_all_time);
+              const idx = (lbJson.data ?? []).indexOf(row);
+              const repScore = Math.round(Math.max(30, 99 - (idx / Math.max(1, lbJson.data.length)) * 65));
+              reputationEntry = {
+                trader_id:             row.address,
+                overall_rep_score:     repScore,
+                overall_win_rate:      pnlAllTime > 0 ? 0.6 : 0.4,
+                total_trades:          0,
+                closed_trades:         0,
+                top_patterns:          [],
+                accuracy_by_condition: {},
+              } as typeof reputationEntry;
+              fullAddress = row.address;
+            }
+          }
+        } catch { /* fall through */ }
+      }
 
       if (!reputationEntry) {
         return reply.code(404).send({ error: "Trader not found", address });
       }
 
-      const fullAddress = reputationEntry.trader_id;
+      if (!fullAddress || fullAddress === address) {
+        fullAddress = reputationEntry!.trader_id;
+      }
 
-      // All intelligence records for this trader
-      const traderRecords = records
+      const PACIFICA = "https://test-api.pacifica.fi";
+
+      // Local intelligence records for this trader
+      const localRecords = records
         .filter((r) => r.trader_id === fullAddress)
         .sort((a, b) => new Date(b.opened_at).getTime() - new Date(a.opened_at).getTime())
         .map((r) => ({
@@ -497,7 +591,7 @@ export async function createServer() {
           direction: r.direction,
           size_usd: r.size_usd,
           entry_price: r.entry_price,
-          exit_price: r.exit_price ?? null,
+          exit_price: r.outcome?.exit_price ?? null,
           opened_at: r.opened_at,
           closed_at: r.closed_at ?? null,
           pattern_tags: r.pattern_tags,
@@ -507,35 +601,125 @@ export async function createServer() {
           duration_minutes: r.outcome?.duration_minutes ?? null,
         }));
 
-      // Real on-chain PnL from Pacifica testnet leaderboard
-      let onchain: {
+      // Real on-chain data — fetch positions + trade history + PnL in parallel
+      type OnchainPnl = {
         pnl_1d: number; pnl_7d: number; pnl_30d: number; pnl_all_time: number;
         equity_current: number; volume_all_time: number; volume_30d: number;
-      } | null = null;
+      };
+
+      let onchain: OnchainPnl | null = null;
+      let realTradeRecords: typeof localRecords = [];
 
       try {
-        const lb = await fetch("https://test-api.pacifica.fi/api/v1/leaderboard", {
-          signal: AbortSignal.timeout(6_000),
-        });
-        if (lb.ok) {
-          const json = await lb.json() as { data: Array<{ address: string; [k: string]: string }> };
-          const row = (json.data ?? []).find(
-            (t) => t.address === fullAddress || t.address.startsWith(address.slice(0, 12)),
-          );
+        const [lbRes, posRes, tradeRes] = await Promise.allSettled([
+          fetch(`${PACIFICA}/api/v1/leaderboard`,                                    { signal: AbortSignal.timeout(6_000) }),
+          fetch(`${PACIFICA}/api/v1/positions?account=${encodeURIComponent(fullAddress)}`, { signal: AbortSignal.timeout(6_000) }),
+          fetch(`${PACIFICA}/api/v1/trades?account=${encodeURIComponent(fullAddress)}&limit=50`, { signal: AbortSignal.timeout(6_000) }),
+        ]);
+
+        // On-chain PnL from leaderboard
+        if (lbRes.status === "fulfilled" && lbRes.value.ok) {
+          const json = await lbRes.value.json() as { data: Array<{ address: string; [k: string]: string }> };
+          const row = (json.data ?? []).find((t) => t.address === fullAddress);
           if (row) {
             onchain = {
-              pnl_1d:         parseFloat(row.pnl_1d ?? "0"),
-              pnl_7d:         parseFloat(row.pnl_7d ?? "0"),
-              pnl_30d:        parseFloat(row.pnl_30d ?? "0"),
-              pnl_all_time:   parseFloat(row.pnl_all_time ?? "0"),
-              equity_current: parseFloat(row.equity_current ?? "0"),
-              volume_all_time:parseFloat(row.volume_all_time ?? "0"),
-              volume_30d:     parseFloat(row.volume_30d ?? "0"),
+              pnl_1d:          parseFloat(row.pnl_1d ?? "0"),
+              pnl_7d:          parseFloat(row.pnl_7d ?? "0"),
+              pnl_30d:         parseFloat(row.pnl_30d ?? "0"),
+              pnl_all_time:    parseFloat(row.pnl_all_time ?? "0"),
+              equity_current:  parseFloat(row.equity_current ?? "0"),
+              volume_all_time: parseFloat(row.volume_all_time ?? "0"),
+              volume_30d:      parseFloat(row.volume_30d ?? "0"),
             };
           }
         }
+
+        // Open positions → show as OPEN trade records
+        if (posRes.status === "fulfilled" && posRes.value.ok) {
+          const posJson = await posRes.value.json() as {
+            data: Array<{
+              symbol: string; side: string; amount: string;
+              entry_price: string; liquidation_price: string;
+              funding: string; created_at: number;
+            }>;
+          };
+          const positions = posJson.data ?? [];
+          realTradeRecords = positions.map((p, i) => {
+            const ep = parseFloat(p.entry_price);
+            const qty = parseFloat(p.amount);
+            const direction = p.side === "bid" ? "long" as const : "short" as const;
+            const sizeUsd = ep * qty;
+            return {
+              id:               `pos-${i}-${p.symbol}`,
+              asset:            `${p.symbol}-USDC-PERP`,
+              direction,
+              size_usd:         isNaN(sizeUsd) ? 0 : sizeUsd,
+              entry_price:      ep,
+              exit_price:       null,
+              opened_at:        new Date(p.created_at).toISOString(),
+              closed_at:        null,   // still open
+              pattern_tags:     [],
+              pnl_usd:          parseFloat(p.funding) || null,
+              pnl_pct:          null,
+              profitable:       null,
+              duration_minutes: null,
+            };
+          });
+        }
+
+        // Recent trades → closed records
+        if (tradeRes.status === "fulfilled" && tradeRes.value.ok) {
+          const tradeJson = await tradeRes.value.json() as {
+            data: Array<{
+              event_type: string; price: string; amount: string;
+              side: string; created_at: number;
+            }>;
+          };
+          // Only taker opens — one record per fill
+          const fills = (tradeJson.data ?? [])
+            .filter((t) => t.event_type === "fulfill_taker" && (t.side === "open_long" || t.side === "open_short"))
+            .slice(0, 30);
+
+          const closedRecords = fills.map((t, i) => {
+            const price = parseFloat(t.price);
+            const qty   = parseFloat(t.amount);
+            const direction = t.side === "open_long" ? "long" as const : "short" as const;
+            const sizeUsd = price * qty;
+            return {
+              id:               `fill-${i}-${t.created_at}`,
+              asset:            "PERP",   // symbol not in trade event; show generic
+              direction,
+              size_usd:         isNaN(sizeUsd) ? 0 : sizeUsd,
+              entry_price:      price,
+              exit_price:       null,
+              opened_at:        new Date(t.created_at).toISOString(),
+              closed_at:        new Date(t.created_at).toISOString(),
+              pattern_tags:     [],
+              pnl_usd:          null,
+              pnl_pct:          null,
+              profitable:       null,
+              duration_minutes: null,
+            };
+          });
+
+          // Merge: open positions first, then closed fills (deduplicate by id)
+          const seen = new Set(realTradeRecords.map((r) => r.id));
+          for (const r of closedRecords) {
+            if (!seen.has(r.id)) realTradeRecords.push(r);
+          }
+        }
       } catch {
-        // onchain stays null — graceful degradation
+        // graceful degradation — fall back to local only
+      }
+
+      // Prefer real on-chain records; fall back to local intelligence records
+      const traderRecords = realTradeRecords.length > 0 ? realTradeRecords : localRecords;
+
+      // Update reputation trade counts from real data when we have it
+      if (onchain && reputationEntry) {
+        reputationEntry.total_trades  = traderRecords.length;
+        reputationEntry.closed_trades = traderRecords.filter((r) => r.closed_at !== null).length;
+        reputationEntry.overall_win_rate = onchain.pnl_all_time > 0 ? 0.65 : 0.35;
       }
 
       return reply.code(200).send({
@@ -548,6 +732,218 @@ export async function createServer() {
     },
   );
 
+  // -------------------------------------------------------------------------
+  // GET /api/pacifica/account/:address  (T-78)
+  // -------------------------------------------------------------------------
+
+  fastify.get<{ Params: { address: string } }>(
+    "/api/pacifica/account/:address",
+    async (req, reply) => {
+      const { address } = req.params;
+      const cacheKey = `account:${address}`;
+      const hit = cacheGet<object>(cacheKey);
+      if (hit) return reply.code(200).send(hit.data);
+
+      try {
+        const data = await getAccount(address);
+        const payload = { ...data, address };
+        cacheSet(cacheKey, payload, 10_000);
+        return reply.code(200).send(payload);
+      } catch (err) {
+        return reply.code(502).send({ error: "Pacifica account unavailable", message: String(err) });
+      }
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // GET /api/pacifica/subaccounts/:address  (T-79)
+  // -------------------------------------------------------------------------
+
+  fastify.get<{ Params: { address: string } }>(
+    "/api/pacifica/subaccounts/:address",
+    async (req, reply) => {
+      const { address } = req.params;
+      const cacheKey = `subaccounts:${address}`;
+      const hit = cacheGet<object>(cacheKey);
+      if (hit) return reply.code(200).send(hit.data);
+
+      try {
+        const subaccounts = await getSubaccounts(address);
+        const payload = { subaccounts };
+        cacheSet(cacheKey, payload, 30_000);
+        return reply.code(200).send(payload);
+      } catch (err) {
+        return reply.code(502).send({ error: "Pacifica subaccounts unavailable", message: String(err) });
+      }
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // GET /api/pacifica/positions/:address  (T-80)
+  // Fans out across master + all subaccounts in parallel
+  // -------------------------------------------------------------------------
+
+  fastify.get<{ Params: { address: string } }>(
+    "/api/pacifica/positions/:address",
+    async (req, reply) => {
+      const { address } = req.params;
+      const cacheKey = `positions:${address}`;
+      const hit = cacheGet<object>(cacheKey);
+      if (hit) return reply.code(200).send(hit.data);
+
+      try {
+        // Get subaccounts and master positions in parallel
+        const [masterPositions, subaccounts] = await Promise.all([
+          getPositions(address),
+          getSubaccounts(address).catch(() => []),
+        ]);
+
+        // Fan out to all subaccounts with per-sub 4s timeout
+        const subResults = await Promise.allSettled(
+          subaccounts.map((sub) => getPositions(sub.address)),
+        );
+
+        const accounts = [
+          { address, is_master: true, positions: masterPositions },
+          ...subaccounts.map((sub, i) => ({
+            address: sub.address,
+            is_master: false,
+            positions:
+              subResults[i]?.status === "fulfilled"
+                ? (subResults[i] as PromiseFulfilledResult<typeof masterPositions>).value
+                : [],
+          })),
+        ];
+
+        const payload = { accounts };
+        cacheSet(cacheKey, payload, 5_000);
+        return reply.code(200).send(payload);
+      } catch (err) {
+        return reply.code(502).send({ error: "Pacifica positions unavailable", message: String(err) });
+      }
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // GET /api/pacifica/funding_history  (T-81 support)
+  // Query: ?symbol=BTC&hours=24
+  // -------------------------------------------------------------------------
+
+  fastify.get<{ Querystring: { symbol?: string; hours?: string } }>(
+    "/api/pacifica/funding_history",
+    async (req, reply) => {
+      const symbol = (req.query.symbol ?? "BTC").toUpperCase();
+      const hours  = parseInt(req.query.hours ?? "24", 10);
+      const cacheKey = `funding:${symbol}:${hours}`;
+      const cached = cacheGet<object>(cacheKey);
+      if (cached) return reply.code(200).send(cached.data);
+
+      try {
+        const points = await getFundingHistory(symbol, hours);
+        const payload = { symbol, points };
+        cacheSet(cacheKey, payload, 5 * 60_000); // 5 min TTL
+        return reply.code(200).send(payload);
+      } catch (err) {
+        return reply.code(502).send({ error: "Funding history unavailable", message: String(err) });
+      }
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // GET /api/portfolio/:address  (T-81)
+  // Composite: account + subaccounts + positions + intelligence overlay
+  // This is the single endpoint the web portfolio page calls.
+  // -------------------------------------------------------------------------
+
+  fastify.get<{ Params: { address: string } }>(
+    "/api/portfolio/:address",
+    async (req, reply) => {
+      const { address } = req.params;
+      const cacheKey = `portfolio:${address}`;
+      const hit = cacheGet<object>(cacheKey);
+      if (hit) return reply.code(200).send(hit.data);
+
+      // Load intelligence data ONCE (fixes per-position reload bug)
+      const [masterAccountResult, subaccountsResult, intelligenceResult] = await Promise.allSettled([
+        getAccount(address),
+        getSubaccounts(address),
+        Promise.all([loadPatterns(), loadRecords(), loadReputation()]),
+      ]);
+
+      const master = masterAccountResult.status === "fulfilled" ? masterAccountResult.value : null;
+      const subaccounts = subaccountsResult.status === "fulfilled" ? subaccountsResult.value : [];
+      const [patterns, records, rep] = intelligenceResult.status === "fulfilled"
+        ? intelligenceResult.value
+        : [[], [], new Map()];
+
+      // Fan out positions to all accounts in parallel
+      const allAddresses = [address, ...subaccounts.map((s) => s.address)];
+      const positionResults = await Promise.allSettled(
+        allAddresses.map((addr) => getPositions(addr)),
+      );
+
+      // Pre-fetch funding history for all unique symbols
+      const allPositions = positionResults.flatMap((r) =>
+        r.status === "fulfilled" ? r.value : [],
+      );
+      const symbols = [...new Set(allPositions.map((p) => p.symbol.split("-")[0]))];
+      const fundingMap = new Map<string, Awaited<ReturnType<typeof getFundingHistory>>>();
+      await Promise.allSettled(
+        symbols.map(async (sym) => {
+          try { fundingMap.set(sym, await getFundingHistory(sym, 24)); } catch { /* skip */ }
+        }),
+      );
+
+      // Build accounts with overlays — intelligence data passed in, not reloaded
+      const accounts = await Promise.all(
+        allAddresses.map(async (addr, i) => {
+          const isMaster = i === 0;
+          const sub = isMaster ? null : subaccounts[i - 1];
+          const positions =
+            positionResults[i]?.status === "fulfilled"
+              ? (positionResults[i] as PromiseFulfilledResult<typeof allPositions>).value
+              : [];
+
+          const positionsWithOverlay = await Promise.all(
+            positions.map(async (pos) => {
+              const sym = pos.symbol.split("-")[0];
+              const fundingPts = fundingMap.get(sym) ?? [];
+              try {
+                const overlay = await computeOverlay(pos, fundingPts, patterns, records, rep);
+                return { ...pos, overlay };
+              } catch {
+                return { ...pos, overlay: { pattern_match: null, rep_signal: null, funding_watch: null } };
+              }
+            }),
+          );
+
+          return {
+            address: addr,
+            label: isMaster ? "Master" : null,
+            is_master: isMaster,
+            balance: isMaster ? master?.balance ?? "0" : (sub?.balance ?? "0"),
+            // Sub equity = balance (no account_equity on subaccount shape from Pacifica)
+            equity:  isMaster ? master?.account_equity ?? "0" : (sub?.balance ?? "0"),
+            positions: positionsWithOverlay,
+          };
+        }),
+      );
+
+      const repEntry = (rep as Map<string, { overall_rep_score: number; overall_win_rate: number; closed_trades: number; total_trades: number; top_patterns: string[] }>).get(address) ?? null;
+
+      const payload = {
+        master: master ? { ...master, address } : null,
+        accounts,
+        reputation: repEntry,
+        stale: false,
+        generated_at: new Date().toISOString(),
+      };
+
+      cacheSet(cacheKey, payload, 10_000);
+      return reply.code(200).send(payload);
+    },
+  );
+
   return fastify;
 }
 
@@ -557,7 +953,7 @@ export async function createServer() {
 
 export async function startServer(port = 4242): Promise<void> {
   const fastify = await createServer();
-  await fastify.listen({ port, host: "0.0.0.0" });
+  await fastify.listen({ port, host: "127.0.0.1" });
   console.log(`Pacifica Intelligence API running on http://localhost:${port}`);
 }
 

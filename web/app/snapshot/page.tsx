@@ -1,14 +1,15 @@
-export const runtime = 'edge';
+
 // ---------------------------------------------------------------------------
 // /snapshot — Market Scanner
 // Shows ALL markets at a glance: funding, buy pressure, momentum, pattern match
 // Entry point to discover WHERE the opportunity is, not just confirm one market
 // ---------------------------------------------------------------------------
 
+export const runtime = "edge";
+
 import Link from "next/link";
 import { OrangeLabel } from "../../components/ui/OrangeLabel";
 
-const PACIFICA_API = "https://test-api.pacifica.fi";
 const LOCAL_API    = "http://localhost:4242";
 
 const MARKETS = [
@@ -16,14 +17,6 @@ const MARKETS = [
   "LINK", "AAVE", "UNI", "WIF", "PEPE", "SEI", "TIA",
 ];
 
-interface RawMarket {
-  symbol:      string;
-  fundingRate: number | string;
-  volume24h?:  number | string;
-  openInterest?: number | string;
-  markPrice?:  number | string;
-  price?:      number | string;
-}
 
 interface MarketRow {
   sym:         string;       // e.g. "ETH"
@@ -41,93 +34,91 @@ interface MarketRow {
 // Data
 // ---------------------------------------------------------------------------
 
+interface IntelSnapshot {
+  current_conditions: {
+    funding_rate: number;
+    open_interest_usd: number;
+    buy_pressure: number;
+    momentum_signal: string;
+    large_orders_count: number;
+    mark_price: number;
+  };
+  matching_patterns: Array<{
+    name: string;
+    win_rate: number;
+    conditions: Array<{ axis?: string }>;
+    primary_assets: string[];
+  }>;
+}
+
 async function fetchMarkets(): Promise<MarketRow[]> {
-  // 1. Try local intelligence feed for active pattern data
-  let activePatterns: Array<{ primary_assets: string[]; name: string; win_rate: number; conditions: Array<{ axis?: string }> }> = [];
-  try {
-    const feedRes = await fetch(`${LOCAL_API}/api/intelligence/feed`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(2_000),
-    });
-    if (feedRes.ok) {
-      const feed = await feedRes.json() as { active_patterns?: typeof activePatterns };
-      activePatterns = feed.active_patterns ?? [];
-    }
-  } catch { /* local API offline — no patterns */ }
+  // Fetch all market snapshots from intelligence API in parallel
+  const snapResults = await Promise.allSettled(
+    MARKETS.map((sym) =>
+      fetch(`${LOCAL_API}/api/intelligence/snapshot/${sym}`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(4_000),
+      })
+        .then(async (r) => {
+          if (!r.ok) return null;
+          return (await r.json()) as IntelSnapshot;
+        })
+        .catch(() => null),
+    ),
+  );
 
-  // Build a quick lookup: normalised symbol → pattern info
+  // Build pattern lookup from first successful snapshot's matching patterns
   const patternByAsset = new Map<string, { name: string; wr: number; side: "long" | "short" }>();
-  for (const p of activePatterns) {
-    const axes = p.conditions.map((c) => (c.axis ?? "").toLowerCase());
-    const side: "long" | "short" =
-      axes.some((a) => a.includes("negative_funding") || a.includes("buy_pressure"))
-        ? "long"
-        : axes.some((a) => a.includes("positive_funding") || a.includes("sell_pressure"))
-        ? "short"
-        : "long";
-    for (const asset of p.primary_assets) {
-      const key = asset.replace(/-USDC-PERP$/, "").replace(/-USDC$/, "").split("-")[0].toUpperCase();
-      patternByAsset.set(key, { name: p.name, wr: p.win_rate, side });
-    }
-  }
 
-  // 2. Fetch live market data from testnet API
-  let rawMarkets: RawMarket[] = [];
-  try {
-    const res = await fetch(`${PACIFICA_API}/api/v1/markets`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (res.ok) {
-      const json = await res.json() as { data?: RawMarket[] };
-      rawMarkets = json.data ?? [];
-    }
-  } catch { /* network error — fall back to stub list */ }
+  const rows: MarketRow[] = MARKETS.map((sym, i) => {
+    const result = snapResults[i];
+    const snap: IntelSnapshot | null =
+      result.status === "fulfilled" ? result.value : null;
 
-  // If testnet returned nothing, build stubs from our known markets list
-  if (rawMarkets.length === 0) {
-    rawMarkets = MARKETS.map((sym) => ({
+    const cond = snap?.current_conditions;
+    const fr    = cond?.funding_rate   ?? 0;
+    const price = cond?.mark_price     ?? 0;
+    const oi    = cond?.open_interest_usd ?? 0;
+
+    // Extract pattern matches for this market
+    const matchedPattern = snap?.matching_patterns?.[0] ?? null;
+    let patternName: string | null = null;
+    let patternWr:   number | null = null;
+    let patternSide: "long" | "short" | null = null;
+
+    if (matchedPattern) {
+      patternName = matchedPattern.name;
+      patternWr   = matchedPattern.win_rate;
+      const axes  = matchedPattern.conditions.map((c) => (c.axis ?? "").toLowerCase());
+      patternSide =
+        axes.some((a) => a.includes("negative_funding") || a.includes("buy_pressure"))
+          ? "long"
+          : axes.some((a) => a.includes("positive_funding") || a.includes("sell_pressure"))
+          ? "short"
+          : "long";
+    }
+
+    // Signal score: pattern match > extreme funding > normal
+    let score = 0;
+    if (patternName)           score += 3;
+    if (Math.abs(fr) > 0.0005) score += 1;
+    if (Math.abs(fr) > 0.001)  score += 1;
+
+    return {
+      sym,
       symbol:      `${sym}-USDC-PERP`,
-      fundingRate: 0,
-      volume24h:   0,
-      markPrice:   0,
-    }));
-  }
+      fundingRate: fr,
+      volume24h:   oi,   // use OI as proxy when no volume endpoint available
+      markPrice:   price,
+      patternName,
+      patternWr,
+      patternSide,
+      signalScore: score,
+    };
+  });
 
-  const rows: MarketRow[] = rawMarkets
-    .map((m): MarketRow | null => {
-      const rawSym = String(m.symbol ?? "");
-      const sym = rawSym.replace(/-USDC-PERP$/, "").replace(/-USDC$/, "").split("-")[0].toUpperCase();
-      if (!sym) return null;
-
-      const fr       = parseFloat(String(m.fundingRate ?? 0));
-      const vol      = parseFloat(String(m.volume24h ?? 0));
-      const price    = parseFloat(String(m.markPrice ?? m.price ?? 0));
-      const pattern  = patternByAsset.get(sym) ?? null;
-
-      // Signal score: pattern match > extreme funding > normal
-      let score = 0;
-      if (pattern)           score += 3;
-      if (Math.abs(fr) > 0.0005) score += 1;
-      if (Math.abs(fr) > 0.001)  score += 1;
-
-      return {
-        sym,
-        symbol:      rawSym || `${sym}-USDC-PERP`,
-        fundingRate: isNaN(fr)    ? 0 : fr,
-        volume24h:   isNaN(vol)   ? 0 : vol,
-        markPrice:   isNaN(price) ? 0 : price,
-        patternName: pattern?.name   ?? null,
-        patternWr:   pattern?.wr     ?? null,
-        patternSide: pattern?.side   ?? null,
-        signalScore: score,
-      };
-    })
-    .filter((r): r is MarketRow => r !== null)
-    // Sort: pattern-firing first, then by |funding rate| descending
+  return rows
     .sort((a, b) => b.signalScore - a.signalScore || Math.abs(b.fundingRate) - Math.abs(a.fundingRate));
-
-  return rows;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +135,7 @@ function fmtPrice(p: number): string {
   return `$${p.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
-function fmtVol(v: number): string {
+function fmtOI(v: number): string {
   if (v === 0) return "—";
   if (v >= 1_000_000_000) return `$${(v / 1_000_000_000).toFixed(1)}B`;
   if (v >= 1_000_000)     return `$${(v / 1_000_000).toFixed(1)}M`;
@@ -218,7 +209,7 @@ export default async function ScannerPage() {
 
         {/* Table header */}
         <div className="grid grid-cols-[120px_1fr_1fr_1fr_2fr_180px] gap-0 border-b border-neutral-500/20 bg-[#0D0D0D]">
-          {["Market", "Funding", "24h Vol", "Price", "Signal", "Actions"].map((h) => (
+          {["Market", "Funding", "Open Interest", "Price", "Signal", "Actions"].map((h) => (
             <div key={h} className="px-4 py-3 text-[10px] font-mono text-neutral-600 uppercase tracking-wider">
               {h}
             </div>
@@ -266,7 +257,7 @@ export default async function ScannerPage() {
 
               {/* Volume */}
               <div className="px-4 py-4 flex items-center">
-                <span className="text-neutral-400 text-sm font-mono">{fmtVol(row.volume24h)}</span>
+                <span className="text-neutral-400 text-sm font-mono">{fmtOI(row.volume24h)}</span>
               </div>
 
               {/* Price */}
@@ -325,8 +316,8 @@ export default async function ScannerPage() {
 
       {/* Footer hint */}
       <p className="text-[11px] text-neutral-600 font-mono mt-4 text-center">
-        Pattern signals require the intelligence server ·{" "}
-        <code className="text-orange-500/70">pacifica intelligence start</code>
+        Live data from the intelligence server ·{" "}
+        <code className="text-orange-500/70">pacifica intelligence serve</code>
       </p>
     </div>
   );

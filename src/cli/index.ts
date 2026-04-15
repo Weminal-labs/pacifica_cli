@@ -4,11 +4,26 @@
 // ---------------------------------------------------------------------------
 // Registers all subcommands, parses global options, and handles uncaught
 // errors with user-friendly messages (no raw stack traces).
+//
+// --mcp flag: start the MCP server over stdio (for Claude Desktop / Cursor).
+//   npx -y pacifica-cli --mcp
 // ---------------------------------------------------------------------------
 
 import { Command } from "commander";
 
 const VERSION = "0.1.0";
+
+// ---------------------------------------------------------------------------
+// --mcp: delegate to the MCP server and stop here
+// ---------------------------------------------------------------------------
+
+if (process.argv.includes("--mcp")) {
+  import("../mcp/server.js").catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`Failed to start Pacifica MCP server: ${msg}`);
+    process.exit(1);
+  });
+} else {
 
 // ---------------------------------------------------------------------------
 // Main program
@@ -18,10 +33,14 @@ const program = new Command();
 
 program
   .name("pacifica")
-  .description("Agent-native trading terminal for Pacifica DEX")
+  .description(
+    "Agent-native trading terminal for Pacifica DEX\n\n" +
+    "JSON mode: pass -j / --json to any command for machine-readable output.\n" +
+    "In JSON mode stdout is always the envelope; stderr carries human messages.",
+  )
   .version(VERSION, "-v, --version")
   .option("--testnet", "Override network to testnet")
-  .option("--json", "Output JSON instead of formatted text");
+  .option("-j, --json", "Machine-readable JSON output (for AI agents)");
 
 // ---------------------------------------------------------------------------
 // Subcommands – real implementations
@@ -85,6 +104,30 @@ async function registerCommands(): Promise<void> {
   const { createIntelligenceCommand } = await import("./commands/intelligence.js");
   const intelligenceCmd = createIntelligenceCommand();
 
+  const { createSimulateCommand } = await import("./commands/simulate.js");
+  const simulateCmd = createSimulateCommand();
+
+  const { createLeaderboardCommand } = await import("./commands/leaderboard.js");
+  const leaderboardCmd = createLeaderboardCommand();
+
+  const { createWatchCommand } = await import("./commands/watch.js");
+  const watchCmd = createWatchCommand();
+
+  const { createCopyCommand } = await import("./commands/copy.js");
+  const copyCmd = createCopyCommand();
+
+  const { createPaperCommand } = await import("./commands/paper.js");
+  const paperCmd = createPaperCommand();
+
+  const { createStreamCommand } = await import("./commands/stream.js");
+  const streamCmd = createStreamCommand();
+
+  const { createAuditCommand } = await import("./commands/audit.js");
+  const auditCmd = createAuditCommand();
+
+  const { createIntentCommand } = await import("./commands/intent.js");
+  const intentCmd = createIntentCommand();
+
   program.addCommand(initCmd);
   program.addCommand(scanCmd);
   program.addCommand(arbCmd);
@@ -98,6 +141,14 @@ async function registerCommands(): Promise<void> {
   program.addCommand(smartCmd);
   program.addCommand(alertsCmd);
   program.addCommand(intelligenceCmd);
+  program.addCommand(simulateCmd);
+  program.addCommand(leaderboardCmd);
+  program.addCommand(watchCmd);
+  program.addCommand(copyCmd);
+  program.addCommand(paperCmd);
+  program.addCommand(streamCmd);
+  program.addCommand(auditCmd);
+  program.addCommand(intentCmd);
 }
 
 // ---------------------------------------------------------------------------
@@ -116,3 +167,5 @@ main().catch((err: unknown) => {
   console.error(`\nError: ${message}\n`);
   process.exitCode = 1;
 });
+
+} // end else (CLI path)

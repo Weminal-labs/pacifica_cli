@@ -147,7 +147,7 @@ export default function GuidePage() {
         <Section id="overview" label="/ 01 OVERVIEW" title="How everything connects" sub="The dashboard reads from two sources — your local intelligence server and the Pacifica testnet API.">
           <div className="bg-[#0D0D0D] border border-neutral-500/15 p-6 font-mono text-sm text-neutral-400 leading-loose mb-6">
             <p className="text-orange-500 mb-1"># Data flow</p>
-            <p>Your machine → pacifica intelligence start → localhost:4242</p>
+            <p>Your machine → pacifica intelligence serve → localhost:4242</p>
             <p className="text-neutral-600 pl-4">↓ if offline</p>
             <p>Pacifica testnet API → test-api.pacifica.fi</p>
             <p className="text-neutral-600 pl-4">↓ for market data always</p>

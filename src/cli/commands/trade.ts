@@ -22,6 +22,7 @@ import type {
 } from "../../core/sdk/types.js";
 import { theme, formatPrice, formatAmount } from "../theme.js";
 import { captureIntelligence } from "../../core/intelligence/capture.js";
+import { ok as envOk, writeSuccess, writeError, classifyError } from "../../output/envelope.js";
 
 // ---------------------------------------------------------------------------
 // Shared option definitions
@@ -34,6 +35,9 @@ interface TradeOptions {
   tp?: number;
   sl?: number;
   slippage?: number;
+  validate?: boolean;
+  json?: boolean;
+  cancelAfter?: number;
 }
 
 /**
@@ -46,7 +50,10 @@ function withTradeOptions(cmd: Command): Command {
     .option("-p, --price <n>", "Limit price", parseFloat)
     .option("--tp <n>", "Take-profit price", parseFloat)
     .option("--sl <n>", "Stop-loss price", parseFloat)
-    .option("--slippage <n>", "Slippage percentage", parseFloat);
+    .option("--slippage <n>", "Slippage percentage", parseFloat)
+    .option("-V, --validate", "Preview trade details without submitting (dry-run)")
+    .option("-j, --json", "Machine-readable JSON output (for AI agents)")
+    .option("--cancel-after <n>", "Auto-cancel order after N seconds (dead-man switch)", parseInt);
 }
 
 // ---------------------------------------------------------------------------
@@ -77,6 +84,109 @@ export function createTradeCommand(): Command {
 }
 
 // ---------------------------------------------------------------------------
+// Trade preview (--validate dry-run)
+// ---------------------------------------------------------------------------
+
+interface TradePreview {
+  symbol: string;
+  side: "LONG" | "SHORT";
+  size: number;
+  entry_price: number;
+  notional: number;
+  leverage: number;
+  margin_required: number;
+  liquidation_price: number;
+  order_type: string;
+  dry_run: true;
+}
+
+async function executeValidate(
+  side: OrderSide,
+  symbol: string,
+  size: number,
+  opts: TradeOptions,
+): Promise<void> {
+  let client: PacificaClient | undefined;
+  const jsonMode = opts.json ?? false;
+
+  try {
+    const config = await loadConfig();
+    // Public endpoint -- no signer needed to fetch mark price.
+    client = new PacificaClient({ network: config.network });
+
+    const markets = await client.getMarkets();
+    const market = markets.find((m) => m.symbol === symbol);
+    const markPrice = market?.markPrice ?? 0;
+
+    if (markPrice === 0) {
+      const e = { ok: false as const, error: "validation" as const, message: `Could not fetch mark price for ${symbol}. Verify the symbol is correct.`, retryable: false };
+      writeError(e, jsonMode);
+      return;
+    }
+
+    const leverage = opts.leverage ?? config.defaults.leverage;
+    const orderType = opts.type.toLowerCase();
+    const entryPrice = orderType === "limit" && opts.price !== undefined
+      ? opts.price
+      : markPrice;
+
+    const notional = size * entryPrice;
+    const marginRequired = notional / leverage;
+
+    // Simplified liquidation price estimate (ignores maintenance margin):
+    //   Long:  entry × (1 - 1/leverage)
+    //   Short: entry × (1 + 1/leverage)
+    const liqPrice = side === "bid"
+      ? entryPrice * (1 - 1 / leverage)
+      : entryPrice * (1 + 1 / leverage);
+
+    const preview: TradePreview = {
+      symbol,
+      side: side === "bid" ? "LONG" : "SHORT",
+      size,
+      entry_price: entryPrice,
+      notional,
+      leverage,
+      margin_required: marginRequired,
+      liquidation_price: liqPrice,
+      order_type: orderType,
+      dry_run: true,
+    };
+
+    if (jsonMode) {
+      writeSuccess(preview, true);
+      return;
+    }
+
+    // Human-readable preview table.
+    const w = 14; // label column width
+    const line = "─".repeat(61);
+    console.log();
+    console.log(theme.header(`  ${"─".repeat(4)} TRADE PREVIEW (dry-run, not submitted) ${"─".repeat(18)}`));
+    console.log(`  ${theme.label("Symbol".padEnd(w))}${symbol}`);
+    console.log(`  ${theme.label("Side".padEnd(w))}${preview.side}`);
+    console.log(`  ${theme.label("Size".padEnd(w))}${formatAmount(size)} ${symbol.split("-")[0] ?? symbol}`);
+    console.log(`  ${theme.label("Entry (est.)".padEnd(w))}${formatPrice(entryPrice)}`);
+    console.log(`  ${theme.label("Notional".padEnd(w))}${formatPrice(notional)}`);
+    console.log(`  ${theme.label("Leverage".padEnd(w))}${leverage}×`);
+    console.log(`  ${theme.label("Margin req.".padEnd(w))}${formatPrice(marginRequired)}`);
+    console.log(`  ${theme.label("Liq. price".padEnd(w))}${formatPrice(liqPrice)}`);
+    console.log(`  ${theme.muted(line)}`);
+    console.log(`  ${theme.muted("Use without --validate to submit this order.")}`);
+    console.log();
+  } catch (thrown: unknown) {
+    if (isExitPromptError(thrown)) {
+      console.log(theme.muted("\nCancelled."));
+      return;
+    }
+    const e = classifyError(thrown);
+    writeError(e, jsonMode);
+  } finally {
+    client?.destroy();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Trade execution
 // ---------------------------------------------------------------------------
 
@@ -86,6 +196,15 @@ async function executeTrade(
   size: number,
   opts: TradeOptions,
 ): Promise<void> {
+  const symbol = rawSymbol.toUpperCase();
+  const jsonMode = opts.json ?? false;
+
+  // --validate: dry-run preview, never submit.
+  if (opts.validate) {
+    await executeValidate(side, symbol, size, opts);
+    return;
+  }
+
   let client: PacificaClient | undefined;
 
   try {
@@ -95,7 +214,6 @@ async function executeTrade(
     client = new PacificaClient({ network: config.network, signer });
 
     // -- 2. Validate inputs -------------------------------------------------
-    const symbol = rawSymbol.toUpperCase();
     const orderType = opts.type.toLowerCase();
 
     if (orderType !== "market" && orderType !== "limit") {
@@ -136,37 +254,41 @@ async function executeTrade(
     const sideLabel = side === "bid" ? "BUY (Long)" : "SELL (Short)";
     const typeLabel = orderType === "market" ? "Market" : "Limit";
 
-    console.log();
-    console.log(theme.header("Order Summary"));
-    console.log(theme.muted("─────────────"));
-    console.log(`  ${theme.label("Symbol:")}    ${symbol}`);
-    console.log(`  ${theme.label("Side:")}      ${sideLabel}`);
-    console.log(`  ${theme.label("Size:")}      ${formatAmount(size)}`);
-    console.log(`  ${theme.label("Type:")}      ${typeLabel}`);
-    if (orderType === "limit" && opts.price !== undefined) {
-      console.log(`  ${theme.label("Price:")}     ${formatPrice(opts.price)}`);
+    if (!jsonMode) {
+      console.log();
+      console.log(theme.header("Order Summary"));
+      console.log(theme.muted("─────────────"));
+      console.log(`  ${theme.label("Symbol:")}    ${symbol}`);
+      console.log(`  ${theme.label("Side:")}      ${sideLabel}`);
+      console.log(`  ${theme.label("Size:")}      ${formatAmount(size)}`);
+      console.log(`  ${theme.label("Type:")}      ${typeLabel}`);
+      if (orderType === "limit" && opts.price !== undefined) {
+        console.log(`  ${theme.label("Price:")}     ${formatPrice(opts.price)}`);
+      }
+      console.log(`  ${theme.label("Leverage:")}  ${leverage}x`);
+      if (orderType === "market") {
+        console.log(`  ${theme.label("Slippage:")}  ${slippage}%`);
+      }
+      if (opts.tp !== undefined) {
+        console.log(`  ${theme.label("TP:")}        ${formatPrice(opts.tp)}`);
+      }
+      if (opts.sl !== undefined) {
+        console.log(`  ${theme.label("SL:")}        ${formatPrice(opts.sl)}`);
+      }
+      console.log();
     }
-    console.log(`  ${theme.label("Leverage:")}  ${leverage}x`);
-    if (orderType === "market") {
-      console.log(`  ${theme.label("Slippage:")}  ${slippage}%`);
-    }
-    if (opts.tp !== undefined) {
-      console.log(`  ${theme.label("TP:")}        ${formatPrice(opts.tp)}`);
-    }
-    if (opts.sl !== undefined) {
-      console.log(`  ${theme.label("SL:")}        ${formatPrice(opts.sl)}`);
-    }
-    console.log();
 
-    // -- 6. Confirm ---------------------------------------------------------
-    const confirmed = await confirm({
-      message: "Place this order?",
-      default: true,
-    });
+    // -- 6. Confirm (skip in json mode -- agents don't need interactive prompts) --
+    if (!jsonMode) {
+      const confirmed = await confirm({
+        message: "Place this order?",
+        default: true,
+      });
 
-    if (!confirmed) {
-      console.log(theme.muted("Order cancelled."));
-      return;
+      if (!confirmed) {
+        console.log(theme.muted("Order cancelled."));
+        return;
+      }
     }
 
     // -- 7. Execute ---------------------------------------------------------
@@ -200,10 +322,24 @@ async function executeTrade(
     }
 
     // -- 8. Success ---------------------------------------------------------
-    console.log();
-    console.log(theme.success("  Order placed"));
-    console.log(`  ${theme.label("Order ID:")}  ${orderId}`);
-    console.log();
+    if (jsonMode) {
+      writeSuccess(
+        {
+          order_id: orderId,
+          symbol,
+          side,
+          size,
+          order_type: orderType,
+          leverage,
+        },
+        true,
+      );
+    } else {
+      console.log();
+      console.log(theme.success("  Order placed"));
+      console.log(`  ${theme.label("Order ID:")}  ${orderId}`);
+      console.log();
+    }
 
     // -- 9. Non-blocking intelligence capture (fire-and-forget) ------------
     // Failure here must NEVER surface to the trader — silent fail only.
@@ -215,6 +351,11 @@ async function executeTrade(
       entry_price: markPrice,
       api_key: config.private_key,
     }).catch(() => {});
+
+    // -- 10. Dead-man switch (optional) ------------------------------------
+    if (opts.cancelAfter !== undefined && opts.cancelAfter > 0) {
+      await runDeadManSwitch(client, symbol, orderId, opts.cancelAfter, jsonMode);
+    }
   } catch (err: unknown) {
     // Handle Ctrl+C gracefully (ExitPromptError from @inquirer/prompts).
     if (isExitPromptError(err)) {
@@ -222,12 +363,114 @@ async function executeTrade(
       return;
     }
 
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(theme.error(`\nTrade failed: ${message}\n`));
-    process.exitCode = 1;
+    if (jsonMode) {
+      writeError(classifyError(err), true);
+    } else {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(theme.error(`\nTrade failed: ${message}\n`));
+      process.exitCode = 1;
+    }
   } finally {
     client?.destroy();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Dead-man switch
+// ---------------------------------------------------------------------------
+
+/**
+ * Hold open for `seconds` then automatically cancel the order.
+ * Ctrl+C during the countdown aborts the auto-cancel — the order stays open.
+ */
+async function runDeadManSwitch(
+  client: PacificaClient,
+  symbol: string,
+  orderId: number,
+  seconds: number,
+  jsonMode: boolean,
+): Promise<void> {
+  return new Promise((resolve) => {
+    let aborted = false;
+    let elapsed = 0;
+
+    // Schedule the cancel_scheduled JSON event immediately.
+    const cancelAt = new Date(Date.now() + seconds * 1000).toISOString();
+    if (jsonMode) {
+      process.stdout.write(
+        JSON.stringify({ type: "cancel_scheduled", cancel_at: cancelAt, order_id: String(orderId) }) + "\n",
+      );
+    } else {
+      process.stderr.write(
+        `  ${theme.warning(`Dead-man switch: order will auto-cancel in ${seconds}s unless confirmed`)}\n`,
+      );
+    }
+
+    // SIGINT handler: abort the countdown, leave order open.
+    const onSigint = () => {
+      aborted = true;
+      clearInterval(ticker);
+      if (jsonMode) {
+        process.stdout.write(
+          JSON.stringify({ type: "cancel_aborted", order_id: String(orderId) }) + "\n",
+        );
+      } else {
+        process.stderr.write(`\r  ${theme.muted("Countdown aborted — order remains open")}        \n`);
+      }
+      resolve();
+    };
+
+    process.once("SIGINT", onSigint);
+
+    const ticker = setInterval(() => {
+      elapsed += 1;
+      const remaining = seconds - elapsed;
+
+      if (!jsonMode) {
+        // Overwrite the same line with a countdown.
+        process.stderr.write(`\r  ${theme.muted(`Auto-cancel in ${remaining}s...`)}   `);
+      }
+
+      if (elapsed >= seconds) {
+        clearInterval(ticker);
+        process.removeListener("SIGINT", onSigint);
+
+        if (aborted) {
+          resolve();
+          return;
+        }
+
+        // Fire the cancel.
+        client.cancelOrder(symbol, orderId)
+          .then(() => {
+            if (jsonMode) {
+              process.stdout.write(
+                JSON.stringify({ type: "cancelled", order_id: String(orderId) }) + "\n",
+              );
+            } else {
+              process.stderr.write(
+                `\r  ${theme.warning(`Dead-man switch triggered — order ${orderId} cancelled`)}        \n`,
+              );
+            }
+          })
+          .catch((cancelErr: unknown) => {
+            const msg = cancelErr instanceof Error ? cancelErr.message : String(cancelErr);
+            if (jsonMode) {
+              process.stdout.write(
+                JSON.stringify({ type: "cancel_failed", order_id: String(orderId), message: msg }) + "\n",
+              );
+            } else {
+              process.stderr.write(
+                `\r  ${theme.error(`Dead-man switch: cancel failed — ${msg}`)}\n`,
+              );
+            }
+          })
+          .finally(() => {
+            resolve();
+          });
+      }
+    }, 1000);
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -13,7 +13,8 @@ import { randomUUID } from "node:crypto";
 import type { PacificaClient } from "../sdk/client.js";
 import type { ArbConfig } from "../config/types.js";
 import type { ArbPosition, ArbState, ArbLifetimeStats, ArbOpportunity } from "./types.js";
-import { detectOpportunities } from "./scanner.js";
+import { detectOpportunities, scanAllMarkets } from "./scanner.js";
+import type { MarketScanContext } from "./scanner.js";
 import { fetchAllExternalRates } from "./external.js";
 import { enterPosition, exitPosition, isFeeRatioAcceptable } from "./executor.js";
 import {
@@ -166,6 +167,22 @@ export class ArbManager {
       (p) => p.status === "active" || p.status === "pending",
     );
     return detectOpportunities(markets, this.config, active, externalRates);
+  }
+
+  /**
+   * Full unfiltered scan — returns all eligible markets + market context.
+   * Used by `arb scan` CLI for regime display and fallback rows.
+   */
+  async scanAllMarkets(): Promise<MarketScanContext> {
+    const [markets, externalRates] = await Promise.all([
+      this.client.getMarkets(),
+      this.config.use_external_rates ? fetchAllExternalRates() : Promise.resolve([]),
+    ]);
+
+    const active = this.positions.filter(
+      (p) => p.status === "active" || p.status === "pending",
+    );
+    return scanAllMarkets(markets, this.config, active, externalRates);
   }
 
   // -------------------------------------------------------------------------

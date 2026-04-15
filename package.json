@@ -4,8 +4,9 @@
   "description": "Agent-native trading terminal for Pacifica DEX",
   "type": "module",
   "bin": {
-    "pacifica": "./dist/cli.js",
-    "pacifica-mcp": "./dist/mcp.js"
+    "pacifica": "dist/cli.js",
+    "pacifica-cli": "dist/cli.js",
+    "pacifica-mcp": "dist/mcp.js"
   },
   "scripts": {
     "dev": "tsx src/cli/index.ts",
@@ -23,6 +24,10 @@
     "terminal"
   ],
   "license": "MIT",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "packageManager": "pnpm@10.7.1",
   "engines": {
     "node": ">=18"

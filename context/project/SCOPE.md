@@ -24,6 +24,7 @@
 - Agent-readable market intelligence (M10 — 5 MCP tools, alerts CLI)
 - Funding rate arbitrage bot (M11 — `pacifica arb` with 7 subcommands, 6 MCP tools)
 - Pacifica Intelligence Layer (M11 — capture, pattern engine, web UI, Elfa social signals)
+- Web intelligence dashboard (M12 — read-only overlay, no trading execution)
 
 ### P2 — Only If Day 2 Goes Well
 - Event hooks system (7 event types, YAML config)
@@ -45,13 +46,13 @@
 
 ## Never In Scope
 
-- Web dashboard or browser-based UI
 - Hosted server / cloud deployment (runs locally only)
 - User accounts or authentication system (API key only)
 - Traditional database (file-based storage only)
 - Telemetry or analytics collection
 - Custodial key management
 - Light mode
+- Order execution from the web dashboard (deep links to app.pacifica.fi only)
 
 ## Open Questions
 

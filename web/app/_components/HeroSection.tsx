@@ -13,6 +13,7 @@
 import Link from "next/link";
 import { useRef } from "react";
 import { useCssFallback } from "../../hooks/useCssFallback";
+import { DitherBackground } from "../../components/ui/DitherBackground";
 
 export function HeroSection() {
   const sectionRef = useRef<HTMLDivElement>(null);
@@ -28,17 +29,41 @@ export function HeroSection() {
       onMouseEnter={css.onMouseEnter}
       onMouseLeave={css.onMouseLeave}
     >
-      {/* ── Layer 1: B&W dithered landscape (always visible) ── */}
+      {/* ── Layer 1: B&W dithered landscape (always visible base) ── */}
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: "url('/hero-dither.png')" }}
+        style={{ backgroundImage: "url('/hero-dither.png')", zIndex: 1 }}
       />
 
-      {/* ── Layer 2: full-color landscape (revealed on hover via mask) ── */}
+      {/* ── Layer 2: Dither animated waves — screen-blends over black sky ── */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          zIndex: 2,
+          mixBlendMode: "screen",
+          WebkitMaskImage:
+            "linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.7) 35%, rgba(0,0,0,0) 62%)",
+          maskImage:
+            "linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.7) 35%, rgba(0,0,0,0) 62%)",
+        }}
+      >
+        <DitherBackground
+          waveColor={[0.4745098039215686, 0.4745098039215686, 0.4745098039215686]}
+          colorNum={5}
+          pixelSize={3}
+          waveAmplitude={0.28}
+          waveSpeed={0.03}
+          waveFrequency={2.5}
+          enableMouseInteraction={true}
+          mouseRadius={1.1}
+        />
+      </div>
+
+      {/* ── Layer 3: full-color landscape (revealed on hover via mask) ── */}
       <div
         ref={cssOverlay}
         className="absolute inset-0 bg-cover bg-center bg-no-repeat pointer-events-none"
-        style={{ backgroundImage: "url('/hero.png')", opacity: 0 }}
+        style={{ backgroundImage: "url('/hero.png')", opacity: 0, zIndex: 3 }}
       />
 
       {/* ── CRT scanlines — subtle terminal feel ── */}
@@ -47,7 +72,7 @@ export function HeroSection() {
         style={{
           backgroundImage:
             "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px)",
-          zIndex: 1,
+          zIndex: 4,
         }}
       />
 

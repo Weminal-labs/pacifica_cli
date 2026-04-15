@@ -1,3 +1,6 @@
+
+export const runtime = "edge";
+
 import { OrangeLabel } from "../../../components/ui/OrangeLabel";
 import { WinRateBadge } from "../../../components/ui/WinRateBadge";
 import { SocialConfirmationCard } from "../../../components/snapshot/SocialConfirmationCard";
@@ -141,12 +144,24 @@ export default async function SnapshotPage({
     <div className="min-h-screen bg-bg-primary max-w-6xl mx-auto px-6 py-12">
       <div className="mb-8">
         <OrangeLabel text="/ MARKET SNAPSHOT" />
-        <h1 className="text-4xl font-bold text-white mt-3 mb-2">
-          {market.toUpperCase()}
-        </h1>
-        <p className="text-muted text-sm">
-          Generated {new Date(snap.generated_at).toLocaleTimeString()}
-        </p>
+        <div className="flex items-start justify-between mt-3">
+          <div>
+            <h1 className="text-4xl font-bold text-white mb-2">
+              {market.toUpperCase()}
+            </h1>
+            <p className="text-muted text-sm">
+              Generated {new Date(snap.generated_at).toLocaleTimeString()}
+            </p>
+          </div>
+          <a
+            href={`https://test-app.pacifica.fi/trade/${market.toUpperCase()}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-black bg-orange-500 px-4 py-2 text-sm font-semibold hover:bg-orange-400 transition-colors shrink-0"
+          >
+            Trade on Pacifica ↗
+          </a>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">

@@ -8,39 +8,57 @@ import { Command } from "commander";
 import { loadConfig } from "../../core/config/loader.js";
 import { PacificaClient } from "../../core/sdk/client.js";
 import { createSignerFromConfig } from "../../core/sdk/signer.js";
-import { theme, formatFundingRate } from "../theme.js";
+import { theme, formatFundingRate, formatPrice } from "../theme.js";
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Layout helpers — ANSI-safe padding
 // ---------------------------------------------------------------------------
 
-function pad(str: string, len: number): string {
-  return str.length >= len ? str : str + " ".repeat(len - str.length);
+// Strip ANSI escape codes to get the visible character count
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+function visibleLen(s: string): number {
+  return s.replace(ANSI_RE, "").length;
 }
 
-function padLeft(str: string, len: number): string {
-  return str.length >= len ? str : " ".repeat(len - str.length) + str;
+// Left-align: pad on the right with spaces (works with colored strings)
+function padR(s: string, width: number): string {
+  const extra = width - visibleLen(s);
+  return extra > 0 ? s + " ".repeat(extra) : s;
 }
+
+// Right-align: pad on the left with spaces (works with colored strings)
+function padL(s: string, width: number): string {
+  const extra = width - visibleLen(s);
+  return extra > 0 ? " ".repeat(extra) + s : s;
+}
+
+// ---------------------------------------------------------------------------
+// Formatters
+// ---------------------------------------------------------------------------
 
 function colorRate(rate: number): string {
-  const formatted = formatFundingRate(rate);
-  if (rate > 0.01) return theme.profit(formatted);
-  if (rate < -0.01) return theme.loss(formatted);
-  return theme.muted(formatted);
+  // rate is a raw decimal from the API (e.g. 0.04 = 4%)
+  const pct = rate * 100;
+  const sign = pct >= 0 ? "+" : "";
+  const text = `${sign}${pct.toFixed(4)}%`;
+  if (pct > 0.5)  return theme.profit(text);
+  if (pct < -0.5) return theme.loss(text);
+  return theme.muted(text);
 }
 
-function formatCountdown(isoString: string): string {
-  try {
-    const target = new Date(isoString).getTime();
-    const now = Date.now();
-    const diff = target - now;
-    if (diff <= 0) return "now";
-    const hours = Math.floor(diff / 3_600_000);
-    const minutes = Math.floor((diff % 3_600_000) / 60_000);
-    return `${hours}h ${minutes}m`;
-  } catch {
-    return "N/A";
-  }
+function formatApr(rate: number): string {
+  // rate is raw decimal (0.04 = 4%). APR = rate * 3 * 365 gives e.g. 43.8 → display as "43.8%"
+  const apr = rate * 3 * 365;
+  const sign = apr >= 0 ? "+" : "";
+  const text = `${sign}${apr.toFixed(1)}%`;
+  if (apr > 5)   return theme.profit(text);
+  if (apr < -5)  return theme.loss(text);
+  return theme.muted(text);
+}
+
+function formatMktPrice(price: number): string {
+  if (!price || price === 0) return theme.muted("—");
+  return formatPrice(price);
 }
 
 // ---------------------------------------------------------------------------
@@ -77,37 +95,44 @@ export function createFundingCommand(): Command {
           return;
         }
 
-        // Sort by absolute funding rate descending
+        // Sort by absolute APR descending
         const sorted = [...markets].sort(
           (a, b) => Math.abs(b.fundingRate) - Math.abs(a.fundingRate),
         );
 
-        console.log();
-        console.log(theme.header("Pacifica Funding Rates"));
-        console.log(theme.muted("─".repeat(68)));
+        // Column widths (visible characters)
+        const W = { sym: 10, rate: 11, pred: 11, apr: 9, price: 12 };
+        const totalW = 2 + W.sym + 2 + W.rate + 2 + W.pred + 2 + W.apr + 2 + W.price;
 
-        // Header
-        console.log(
-          `  ${pad("Symbol", 10)} ${padLeft("Current", 12)} ${padLeft("Predicted", 12)} ${padLeft("APR (8h)", 12)} ${padLeft("Price", 14)}`,
-        );
-        console.log(theme.muted("  " + "─".repeat(62)));
+        const divider = theme.muted("─".repeat(totalW));
+        const thin    = theme.muted("─".repeat(totalW));
+
+        console.log();
+        console.log(theme.header("  Pacifica Funding Rates"));
+        console.log(divider);
+
+        // Header row (plain text, no color — so padR/padL work fine)
+        const hSym   = padR("Symbol",    W.sym);
+        const hRate  = padL("Current",   W.rate);
+        const hPred  = padL("Predicted", W.pred);
+        const hApr   = padL("APR (8h)", W.apr);
+        const hPrice = padL("Price",     W.price);
+        console.log(theme.muted(`  ${hSym}  ${hRate}  ${hPred}  ${hApr}  ${hPrice}`));
+        console.log(thin);
 
         for (const m of sorted) {
-          const apr = m.fundingRate * 3 * 365; // 8h funding = 3x daily
-          const aprStr = apr >= 0 ? `+${apr.toFixed(1)}%` : `${apr.toFixed(1)}%`;
-          const aprColor = apr > 10
-            ? theme.profit(aprStr)
-            : apr < -10
-              ? theme.loss(aprStr)
-              : theme.muted(aprStr);
+          const sym   = padR(m.symbol,                  W.sym);
+          const rate  = padL(colorRate(m.fundingRate),  W.rate);
+          const pred  = padL(colorRate(m.nextFundingRate), W.pred);
+          const apr   = padL(formatApr(m.fundingRate),  W.apr);
+          const price = padL(formatMktPrice(m.price),   W.price);
 
-          console.log(
-            `  ${pad(m.symbol, 10)} ${padLeft(colorRate(m.fundingRate), 23)} ${padLeft(colorRate(m.nextFundingRate), 23)} ${padLeft(aprColor, 23)} ${padLeft("$" + m.price.toLocaleString("en-US", { maximumFractionDigits: 2 }), 14)}`,
-          );
+          console.log(`  ${sym}  ${rate}  ${pred}  ${apr}  ${price}`);
         }
 
-        console.log();
-        console.log(theme.muted("  Rates are 8-hourly. APR = rate x 3 x 365."));
+        console.log(divider);
+        console.log(theme.muted("  Rates settle every 8 h. APR = rate × 3 × 365."));
+        console.log(theme.muted("  " + theme.profit("■") + " longs pay shorts  " + theme.loss("■") + " shorts pay longs"));
         console.log();
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
