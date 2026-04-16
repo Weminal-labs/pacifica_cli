@@ -37,6 +37,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/simulate" className="hover:text-white transition-colors">
                 Simulate
               </Link>
+              <Link href="/mcp" className="hover:text-white transition-colors">
+                MCP
+              </Link>
               <a
                 href="https://github.com/Weminal-labs/pacifica_cli"
                 target="_blank"
