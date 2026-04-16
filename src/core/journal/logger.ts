@@ -28,6 +28,7 @@ export interface JournalEntry {
   leverage: number;
   duration?: number;         // seconds, for position closes
   triggeredBy: "human" | "agent" | "smart_order";
+  patternName?: string;        // name of the pattern that triggered this trade
 }
 
 export interface JournalSummary {
@@ -43,6 +44,16 @@ export interface JournalSummary {
   bestTrade: number;
   worstTrade: number;
   avgDuration?: number;      // seconds
+}
+
+export interface PatternSummary {
+  patternName: string;
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  winRate: number;           // percentage
+  totalPnl: number;
+  avgPnl: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,6 +184,7 @@ export class JournalLogger {
   async getEntries(options?: {
     period?: PeriodFilter;
     symbol?: string;
+    patternName?: string;
     limit?: number;
   }): Promise<JournalEntry[]> {
     let entries = await this.readEntries();
@@ -188,6 +200,14 @@ export class JournalLogger {
     if (options?.symbol) {
       const sym = options.symbol.toUpperCase();
       entries = entries.filter((e) => e.symbol.toUpperCase() === sym);
+    }
+
+    // Pattern name filter
+    if (options?.patternName) {
+      const name = options.patternName.toLowerCase();
+      entries = entries.filter(
+        (e) => e.patternName?.toLowerCase() === name,
+      );
     }
 
     // Sort newest first for limit/display purposes.
@@ -293,6 +313,45 @@ export class JournalLogger {
       avgDuration,
     };
   }
+
+  /**
+   * Compute win-rate and P&L statistics for a single pattern.
+   *
+   * Only considers entries that have a matching `patternName`.
+   */
+  async getPatternSummary(patternName: string): Promise<PatternSummary> {
+    const entries = await this.getEntries({ patternName });
+    return buildPatternSummary(patternName, entries);
+  }
+
+  /**
+   * Compute win-rate and P&L statistics grouped by pattern name.
+   *
+   * Entries without a `patternName` are excluded.  Returns one
+   * `PatternSummary` per distinct pattern, sorted by trade count descending.
+   */
+  async getPatternStats(): Promise<PatternSummary[]> {
+    const all = await this.readEntries();
+
+    // Group entries by patternName (skip entries with no pattern).
+    // Normalise to lowercase for consistent grouping (matches getEntries filter).
+    const groups = new Map<string, { displayName: string; entries: JournalEntry[] }>();
+    for (const entry of all) {
+      if (!entry.patternName) continue;
+      const key = entry.patternName.toLowerCase();
+      if (!groups.has(key)) groups.set(key, { displayName: entry.patternName, entries: [] });
+      groups.get(key)!.entries.push(entry);
+    }
+
+    const summaries: PatternSummary[] = [];
+    for (const [, group] of groups) {
+      summaries.push(buildPatternSummary(group.displayName, group.entries));
+    }
+
+    // Sort by trade count descending.
+    summaries.sort((a, b) => b.totalTrades - a.totalTrades);
+    return summaries;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -324,6 +383,45 @@ function getCutoffDate(period: "today" | "week" | "month"): Date {
       return cutoff;
     }
   }
+}
+
+/**
+ * Build a PatternSummary from a list of entries already filtered to one pattern.
+ */
+function buildPatternSummary(
+  patternName: string,
+  entries: JournalEntry[],
+): PatternSummary {
+  const totalTrades = entries.length;
+
+  if (totalTrades === 0) {
+    return { patternName, totalTrades: 0, wins: 0, losses: 0, winRate: 0, totalPnl: 0, avgPnl: 0 };
+  }
+
+  let wins = 0;
+  let losses = 0;
+  let totalPnl = 0;
+
+  for (const e of entries) {
+    const pnl = e.pnl ?? 0;
+    totalPnl += pnl;
+    // Skip entries with no recorded P&L (open fills not yet closed).
+    if (e.pnl === undefined) continue;
+    if (e.pnl > 0) wins++;
+    else losses++;
+  }
+
+  const closedCount = wins + losses;
+
+  return {
+    patternName,
+    totalTrades,
+    wins,
+    losses,
+    winRate: closedCount > 0 ? (wins / closedCount) * 100 : 0,
+    totalPnl,
+    avgPnl: totalPnl / totalTrades,
+  };
 }
 
 /**

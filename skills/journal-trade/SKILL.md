@@ -103,10 +103,6 @@ At minimum, record these fields at entry:
 
 ## Notes
 
-- The Pacifica intelligence engine automatically captures trade records when you use
-  `pacifica trade` with a connected wallet. The `pacifica intelligence me` command
-  shows your accumulated intelligence profile.
-- Manual journaling supplements the automatic capture with context that the engine
-  cannot infer — specifically the rationale and signal source.
-- Review your journal weekly with `pacifica journal --weekly --json` to identify which
-  signal sources and market conditions produce your best outcomes.
+- Every `pacifica trade` call writes a journal record automatically with size, entry, and market context.
+- The manual `rationale` field is what the trader adds — typically the pattern name (`funding-carry-btc`) or a free-text reason. This turns the journal into a per-pattern track record.
+- Review weekly with `pacifica journal --weekly --json` to see which patterns produce your best outcomes.

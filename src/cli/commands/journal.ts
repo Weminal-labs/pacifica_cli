@@ -20,6 +20,8 @@ import { loadConfig } from "../../core/config/loader.js";
 import { PacificaClient } from "../../core/sdk/client.js";
 import { createSignerFromConfig } from "../../core/sdk/signer.js";
 import type { TradeHistory } from "../../core/sdk/types.js";
+import { JournalLogger } from "../../core/journal/logger.js";
+import type { PatternSummary } from "../../core/journal/logger.js";
 import { theme, formatPrice, formatPnl, formatAmount } from "../theme.js";
 
 // ---------------------------------------------------------------------------
@@ -31,6 +33,7 @@ interface JournalOpts {
   weekly?: boolean;
   monthly?: boolean;
   symbol?: string;
+  pattern?: string;
   limit: string;
   json?: boolean;
   testnet?: boolean;
@@ -72,6 +75,7 @@ export function createJournalCommand(): Command {
     .option("--weekly", "Daily P&L breakdown for the last 7 days")
     .option("--monthly", "Weekly P&L breakdown for the last 30 days")
     .option("--symbol <symbol>", "Filter by symbol")
+    .option("--pattern <name>", "Filter by pattern name (shows pattern stats)")
     .option("--limit <n>", "Number of entries to fetch", "100")
     .option("--json", "Output raw JSON")
     .action(async (opts: JournalOpts, cmd) => {
@@ -216,6 +220,13 @@ async function runJournal(opts: JournalOpts): Promise<void> {
       renderPeriodView(entries, "weekly", 30, symbol);
     } else {
       renderTradeList(entries, symbol);
+    }
+
+    // When --pattern is supplied, show pattern-specific stats from the local journal.
+    if (opts.pattern) {
+      const journal = new JournalLogger();
+      const stats = await journal.getPatternSummary(opts.pattern);
+      renderPatternStats(stats);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -391,6 +402,34 @@ function renderTradeList(entries: TradeHistory[], symbol?: string): void {
     ` | Total P&L: ${formatPnl(totalPnl)}` +
     ` | Total Fees: ${formatPrice(totalFees)}`,
   );
+  console.log();
+}
+
+// ---------------------------------------------------------------------------
+// Pattern stats
+// ---------------------------------------------------------------------------
+
+function renderPatternStats(stats: PatternSummary): void {
+  const divider = "─".repeat(50);
+
+  console.log();
+  console.log(theme.header(`  Pattern Stats — ${stats.patternName}`));
+  console.log(theme.muted(divider));
+
+  if (stats.totalTrades === 0) {
+    console.log(theme.muted("  No trades tagged with this pattern."));
+    console.log();
+    return;
+  }
+
+  const winRate = stats.winRate.toFixed(1);
+  const winColor = stats.winRate >= 50 ? theme.profit : theme.loss;
+
+  console.log(`  Trades:   ${stats.totalTrades}`);
+  console.log(`  Wins:     ${stats.wins}    Losses: ${stats.losses}`);
+  console.log(`  Win Rate: ${winColor(`${winRate}%`)}`);
+  console.log(`  Total P&L: ${formatPnl(stats.totalPnl)}`);
+  console.log(`  Avg P&L:   ${formatPnl(stats.avgPnl)}`);
   console.log();
 }
 

@@ -1,0 +1,32 @@
+# Pattern: range-bound-sol
+# Long SOL near the floor of a known range when volume confirms interest.
+# Exit when price reaches the top of the range.
+
+name: range-bound-sol
+description: Long SOL at range floor with volume confirmation.
+tags: [range, price, sol]
+
+market: SOL-USDC-PERP
+
+when:
+  - axis: mark_price
+    op: lt
+    value: 140              # near the bottom of the range
+    label: "price below $140 range floor"
+  - axis: volume_24h_usd
+    op: gt
+    value: 50000000         # $50M 24h volume
+    label: "healthy volume — not a dead market"
+
+entry:
+  side: long
+  size_usd: 300
+  leverage: 3
+  stop_loss_pct: 4.0
+  take_profit_pct: 5.0
+
+exit:
+  - axis: mark_price
+    op: gt
+    value: 160
+    label: "price reached top of range"

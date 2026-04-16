@@ -1,0 +1,32 @@
+# Pattern: funding-carry-btc
+# Long BTC perps when funding is deeply negative — get paid to hold.
+# Exit when funding flips positive (the carry disappears).
+
+name: funding-carry-btc
+description: Long BTC when funding is deeply negative — collect the carry.
+tags: [funding, carry, btc]
+
+market: BTC-USDC-PERP
+
+when:
+  - axis: funding_rate
+    op: lt
+    value: -0.0003       # funding < -0.03% per interval
+    label: "deeply negative funding"
+  - axis: oi_change_4h_pct
+    op: gt
+    value: 5
+    label: "OI rising (not a collapse)"
+
+entry:
+  side: long
+  size_usd: 500
+  leverage: 3
+  stop_loss_pct: 2.0
+  take_profit_pct: 1.5
+
+exit:
+  - axis: funding_rate
+    op: gt
+    value: 0
+    label: "funding flipped positive — carry gone"

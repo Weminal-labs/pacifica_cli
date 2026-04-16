@@ -1,0 +1,32 @@
+# Pattern: mean-reversion-eth
+# Short ETH when momentum is overbought and buy pressure is extreme.
+# Exit when momentum cools off — price reverts to the mean.
+
+name: mean-reversion-eth
+description: Short ETH on overbought momentum — mean reversion play.
+tags: [mean-reversion, momentum, eth]
+
+market: ETH-USDC-PERP
+
+when:
+  - axis: momentum_value
+    op: gt
+    value: 0.7
+    label: "extremely bullish momentum (overbought)"
+  - axis: buy_pressure
+    op: gt
+    value: 0.8
+    label: "buy pressure at euphoric levels"
+
+entry:
+  side: short
+  size_usd: 500
+  leverage: 2
+  stop_loss_pct: 3.0
+  take_profit_pct: 2.0
+
+exit:
+  - axis: momentum_value
+    op: lt
+    value: 0.2
+    label: "momentum cooled — reversion likely complete"

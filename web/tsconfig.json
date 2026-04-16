@@ -13,8 +13,22 @@
     "jsx": "preserve",
     "incremental": true,
     "plugins": [{ "name": "next" }],
-    "paths": { "@/*": ["./*"] }
+    "paths": {
+      "@/*": ["./*"],
+      "@pacifica/core/*": ["../src/core/*"]
+    }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    "../src/core/patterns/backtest.ts",
+    "../src/core/patterns/candles.ts",
+    "../src/core/patterns/types.ts",
+    "../src/core/patterns/matcher.ts",
+    "../src/core/patterns/loader.ts",
+    "../src/core/intelligence/schema.ts"
+  ],
   "exclude": ["node_modules"]
 }

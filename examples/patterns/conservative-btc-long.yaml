@@ -1,0 +1,25 @@
+# Pattern: conservative-btc-long
+# Composes price-breakout-btc conditions with an extra funding gate.
+# Demonstrates the `include:` field for pattern composition.
+
+name: conservative-btc-long
+description: BTC breakout with funding confirmation — includes price-breakout-btc conditions.
+tags: [composition, btc, conservative]
+
+market: BTC-USDC-PERP
+
+include:
+  - price-breakout-btc
+
+when:
+  - axis: funding_rate
+    op: lt
+    value: 0.0001
+    label: "funding not punishing longs"
+
+entry:
+  side: long
+  size_usd: 500
+  leverage: 3
+  stop_loss_pct: 2.0
+  take_profit_pct: 3.0

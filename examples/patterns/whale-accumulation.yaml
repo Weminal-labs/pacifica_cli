@@ -1,0 +1,37 @@
+# Pattern: whale-accumulation
+# Long any asset when whales are accumulating — large orders stacking up
+# with positive momentum and buy pressure tilted bullish.
+# Exit when whale activity disappears.
+
+name: whale-accumulation
+description: Long when whales are accumulating — follow the smart money.
+tags: [whales, momentum, any]
+
+market: ANY
+
+when:
+  - axis: large_orders_count
+    op: gte
+    value: 5
+    label: "5+ whale orders in the window"
+  - axis: momentum_value
+    op: gt
+    value: 0.2
+    label: "momentum trending positive"
+  - axis: buy_pressure
+    op: gt
+    value: 0.55
+    label: "buy pressure slightly dominant"
+
+entry:
+  side: long
+  size_usd: 600
+  leverage: 2
+  stop_loss_pct: 3.0
+  take_profit_pct: 5.0
+
+exit:
+  - axis: large_orders_count
+    op: lt
+    value: 1
+    label: "whale activity dried up"

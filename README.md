@@ -1,8 +1,8 @@
 <div align="center">
 
-# ⚡ Pacifica CLI
+# Pacifica CLI
 
-**Agent-native trading terminal for [Pacifica DEX](https://test-app.pacifica.fi)**
+**Pattern-programmable trading terminal for [Pacifica DEX](https://test-app.pacifica.fi)**
 
 [![Live site](https://img.shields.io/badge/web-pacifica--intelligence.pages.dev-orange?style=flat-square)](https://pacifica-intelligence.pages.dev)
 [![MCP Guide](https://img.shields.io/badge/MCP-setup_guide-purple?style=flat-square)](https://pacifica-intelligence.pages.dev/mcp)
@@ -12,311 +12,466 @@
 [![License](https://img.shields.io/badge/license-MIT-orange?style=flat-square)](LICENSE)
 [![Network](https://img.shields.io/badge/network-Solana-9945FF?style=flat-square&logo=solana)](https://solana.com)
 
-*One codebase. Three interfaces. Full agent control.*
+*Code your trading instinct as YAML. Test it against history. Let Claude run it.*
 
-**Live Demo:** [pacifica-intelligence.pages.dev](https://pacifica-intelligence.pages.dev) &middot; **MCP Guide:** [/mcp](https://pacifica-intelligence.pages.dev/mcp) &middot; **Slides:** [view presentation](https://amethyst-owl-727.faces.site/onz0fhx37iqd)
-
-</div>
-
-<div align="center">
-
-![Architecture](docs/architecture.jpg)
+**Live Demo:** [pacifica-intelligence.pages.dev](https://pacifica-intelligence.pages.dev) &middot; **MCP Guide:** [/mcp](https://pacifica-intelligence.pages.dev/mcp) &middot; **Patterns:** [/patterns](https://pacifica-intelligence.pages.dev/patterns) &middot; **Slides:** [view presentation](https://amethyst-owl-727.faces.site/onz0fhx37iqd)
 
 </div>
 
 ---
 
-## What is Pacifica CLI?
+## What is this?
 
-A terminal-first trading suite for the Pacifica perpetuals DEX — built for traders who live in the terminal and AI agents that need programmatic market access.
+A CLI + MCP server for the Pacifica perpetuals DEX. You write trading rules as YAML patterns, backtest them against real candles, and Claude executes them via MCP when conditions match.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        pacifica scan                            │
-├──────────┬──────────┬────────┬──────────────┬────────┬─────────┤
-│ Symbol   │   Price  │  24h % │    Volume    │   OI   │ Funding │
-├──────────┼──────────┼────────┼──────────────┼────────┼─────────┤
-│ BTC-PERP │ 69,420   │ +2.4%  │  $48.2M      │ $120M  │ +0.01%  │
-│ ETH-PERP │  3,852   │ +1.1%  │  $21.6M      │  $58M  │ +0.008% │
-│ SOL-PERP │    182   │ -0.8%  │   $9.4M      │  $24M  │ -0.003% │
-│ JTO-PERP │   4.21   │ +5.2%  │   $3.1M      │   $8M  │ +0.021% │
-└──────────┴──────────┴────────┴──────────────┴────────┴─────────┘
-                              Live  ●  testnet
+ You write YAML          Claude backtests           Claude runs it
+ ┌──────────────┐       ┌──────────────────┐       ┌────────────────┐
+ │ when:        │       │ 30d · 8 trades   │       │ "BTC funding   │
+ │   funding <  │  ──>  │ 62% win rate     │  ──>  │  is -0.04% —   │
+ │    -0.03%    │       │ +$142 total P&L  │       │  pattern says   │
+ │ entry:       │       │ max DD: $38      │       │  go long."      │
+ │   side: long │       └──────────────────┘       └────────────────┘
+ └──────────────┘
 ```
-
----
-
-## Three Interfaces, One Codebase
-
-| Interface | Command | Purpose |
-|-----------|---------|---------|
-| **CLI / TUI** | `pacifica <cmd>` | Rich terminal UI — live markets, orders, positions, PnL |
-| **MCP Server** | `pacifica-mcp` | 28 tools for AI agents (Claude, Cursor, any MCP client) |
-| **Claude Skills** | `/scan`, `/trade`, `/journal` | Slash commands for agent-assisted workflows |
 
 ---
 
 ## Quick Start
 
-### Step 1 — Activate your wallet
-
-Before using the CLI, activate your wallet on the Pacifica testnet app:
+### 1. Activate your wallet on Pacifica testnet
 
 1. Go to **[test-app.pacifica.fi](https://test-app.pacifica.fi)**
 2. Connect your Solana wallet (Phantom, Backpack, etc.)
 3. Enter access code: **`Pacifica`**
-4. Use the **Faucet** to mint test USDP
+4. Use the **Faucet** to get test USDC
 
-### Step 2 — Install & configure
+### 2. Install and configure
+
+**From source** (recommended for hackathon judges):
+
+```bash
+git clone https://github.com/Weminal-labs/pacifica_cli.git
+cd pacifica_cli
+pnpm install
+pnpm build
+npm link    # makes `pacifica` command available globally
+```
+
+**Via npm** (once published):
 
 ```bash
 npm install -g pacifica-cli
+# or
+npx pacifica-cli init --testnet
+```
+
+**Initialize your account:**
+
+```bash
 pacifica init --testnet
 ```
 
-The `init` wizard will ask for your private key and set safe defaults for leverage, slippage, and agent guardrails.
+The wizard asks for your private key, sets safe defaults, and auto-seeds 9 example patterns into `~/.pacifica/patterns/`.
 
-### Step 3 — Start trading
+### 3. Your first pattern (under 2 minutes)
 
 ```bash
-pacifica scan                          # live market feed
-pacifica trade buy ETH 0.5 --lev 5    # place a market order
-pacifica positions                     # view open positions
-pacifica journal                       # PnL history & stats
+# Option A: Interactive wizard
+pacifica patterns new
+
+# Option B: Copy an example and edit it
+pacifica patterns copy funding-carry-btc
+nano ~/.pacifica/patterns/funding-carry-btc.yaml
+
+# Option C: Let Claude write it
+# (requires MCP setup below)
+# "Write me a pattern that longs BTC when funding is deeply negative"
+```
+
+### 4. Test it
+
+```bash
+pacifica backtest funding-carry-btc --days 30
+```
+
+### 5. Run it live
+
+```bash
+# Via CLI
+pacifica simulate long BTC 500 --leverage 3
+pacifica trade buy BTC 0.01 --leverage 3
+
+# Via Claude (with MCP connected)
+# "Run my funding-carry-btc pattern against the current market"
 ```
 
 ---
 
-## Command Reference
+## Connect Claude to Pacifica (MCP Setup)
 
-### Markets
+The MCP server gives Claude 23 tools to read markets, place trades, manage patterns, and run backtests — all with built-in guardrails.
 
-```bash
-pacifica scan                          # live prices, volume, funding, OI
-pacifica funding                       # funding rates sorted by APR
-```
+### Option A: Claude Desktop App (local — recommended)
 
-### Trading
-
-```bash
-pacifica trade buy  <symbol> <size>    # market buy
-pacifica trade sell <symbol> <size>    # market sell
-pacifica trade buy  <symbol> <size> --limit <price>   # limit order
-pacifica trade buy  <symbol> <size> --lev 10 --tp 4200 --sl 3600
-```
-
-### Orders & Positions
-
-```bash
-pacifica orders                        # list open orders
-pacifica orders cancel <id>            # cancel one order
-pacifica orders cancel-all [symbol]    # cancel all (or by symbol)
-
-pacifica positions                     # open positions with PnL
-pacifica positions close <symbol>      # close at market
-pacifica heatmap                       # risk heatmap (live, color-coded)
-```
-
-### Smart Orders (Automation)
-
-```bash
-pacifica smart add-trailing <symbol> <distance%>     # trailing stop
-pacifica smart add-partial-tp <symbol>               # multi-level take-profit
-pacifica smart list                                   # active automations
-pacifica smart cancel <id>                            # remove automation
-```
-
-### Journal & Analytics
-
-```bash
-pacifica journal                       # full trade history
-pacifica journal --symbol ETH          # filter by market
-pacifica journal --period week         # today / week / month / all
-```
-
-### Agent Control
-
-```bash
-pacifica agent status                  # guardrails, budget, recent actions
-pacifica agent config                  # edit limits interactively
-pacifica agent log                     # full audit trail
-pacifica agent stop / start            # disable / enable agent trading
-```
-
-### Alerts
-
-```bash
-pacifica alerts add --symbol BTC --above 100000
-pacifica alerts add --symbol ETH --funding-above 0.001 --note "funding squeeze"
-pacifica alerts check
-pacifica alerts list
-pacifica alerts remove <id>
-```
-
-### Scan with Filters
-
-```bash
-pacifica scan --gainers                          # sort by 24h gain
-pacifica scan --losers                           # sort by 24h loss
-pacifica scan --gainers --min-volume 5000000     # gainers with >$5M volume
-pacifica scan --json | jq '.[0]'                 # pipe-friendly JSON output
-```
-
----
-
-## AI Agent Integration (MCP)
-
-Add to your Claude Desktop or Cursor config to give Claude full trading access with built-in guardrails:
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
   "mcpServers": {
     "pacifica": {
       "command": "npx",
-      "args": ["-y", "pacifica-cli", "--mcp"]
+      "args": ["tsx", "/path/to/pacifica_cli/src/mcp/server.ts"]
     }
   }
 }
 ```
 
-### Available MCP Tools
+> Replace `/path/to/pacifica_cli` with your actual clone path.
 
-<table>
-<tr><th>Category</th><th>Tools</th></tr>
-<tr>
-<td><b>Read (10)</b></td>
-<td>
-<code>get_markets</code> · <code>get_ticker</code> · <code>get_orderbook</code><br>
-<code>get_positions</code> · <code>get_account</code> · <code>get_orders</code><br>
-<code>get_order_history</code> · <code>get_trade_history</code><br>
-<code>get_trades_stats</code> · <code>get_agent_status</code>
-</td>
-</tr>
-<tr>
-<td><b>Analytics (5)</b></td>
-<td>
-<code>get_funding_rates</code> · <code>analyze_risk</code><br>
-<code>get_smart_orders</code> · <code>get_journal_stats</code><br>
-<code>get_heatmap_data</code>
-</td>
-</tr>
-<tr>
-<td><b>Funding (2)</b></td>
-<td>
-<code>get_funding_history</code> · <code>analyze_funding_arb</code>
-</td>
-</tr>
-<tr>
-<td><b>Write (6)</b></td>
-<td>
-<code>place_order</code> · <code>close_position</code> · <code>cancel_order</code><br>
-<code>set_position_tpsl</code> · <code>create_smart_order</code><br>
-<code>cancel_smart_order</code>
-</td>
-</tr>
-</table>
+Restart Claude Desktop. You'll see the hammer icon — click it to see all 23 Pacifica tools.
 
-#### Intelligence Tools (5 — agent-readable data)
+### Option B: claude.ai (web) via HTTP/SSE Server
 
-| Tool | Purpose |
-|------|---------|
-| `pacifica_top_markets` | Ranked markets by gainers/losers/volume/OI/funding with optional liquidity gate |
-| `pacifica_liquidity_scan` | Order book depth, spread%, slippage estimates at $10k/$50k/$100k |
-| `pacifica_trade_patterns` | Buy pressure, VWAP, whale order detection, momentum signal |
-| `pacifica_alert_triage` | Prioritized alert list: triggered first, near-trigger second |
-| `pacifica_market_snapshot` | Full market intelligence snapshot (schemaVersion: "1.0") |
+claude.ai doesn't support local MCP servers. You need to run the HTTP server and expose it via a tunnel:
 
-> **All write tools pass through the guardrail system** — order size limits, leverage caps, daily spending budget, and action whitelist are enforced on every agent call.
+**Step 1 — Start the HTTP MCP server:**
+
+```bash
+npx tsx src/mcp/server-http.ts
+# Server starts at http://localhost:4243
+```
+
+**Step 2 — Expose via tunnel (pick one):**
+
+```bash
+# ngrok
+ngrok http 4243
+
+# Cloudflare Tunnel
+cloudflared tunnel --url http://localhost:4243
+
+# localtunnel
+npx localtunnel --port 4243
+```
+
+**Step 3 — Add to Claude Desktop config as remote MCP:**
+
+```json
+{
+  "mcpServers": {
+    "pacifica": {
+      "url": "https://your-tunnel-url.ngrok.app/sse"
+    }
+  }
+}
+```
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/sse` | GET | SSE stream — MCP clients connect here |
+| `/messages` | POST | JSON-RPC messages for active sessions |
+| `/health` | GET | Health check |
+
+### Option C: Claude Code (terminal)
+
+```bash
+# Claude Code auto-detects the MCP server from this repo.
+cd pacifica_cli
+claude
+```
+
+### Option D: Cursor / Windsurf / Any MCP Client
+
+Add to your MCP config (`.cursor/mcp.json`, etc.):
+
+```json
+{
+  "mcpServers": {
+    "pacifica": {
+      "command": "npx",
+      "args": ["tsx", "/path/to/pacifica_cli/src/mcp/server.ts"]
+    }
+  }
+}
+```
+
+### Option E: npm (when published)
+
+Once `pacifica-cli` is on npm, no clone needed:
+
+```json
+{
+  "mcpServers": {
+    "pacifica": {
+      "command": "npx",
+      "args": ["-y", "pacifica-cli", "pacifica-mcp"]
+    }
+  }
+}
+```
+
+### What you can say to Claude after connecting
+
+| You say | Claude does |
+|---------|-------------|
+| "What are my positions?" | Calls `pacifica_get_positions` |
+| "Show funding rates" | Calls `pacifica_funding_rates` |
+| "Write a pattern that shorts ETH when momentum is bearish" | Calls `pacifica_save_pattern` |
+| "Backtest my funding-carry-btc pattern" | Calls `pacifica_backtest_pattern` |
+| "Run my pattern against the current BTC market" | Calls `pacifica_run_pattern` |
+| "Buy 0.01 BTC with 3x leverage" | Calls `pacifica_place_order` |
+| "Close my SOL position" | Calls `pacifica_close_position` |
+| "How is my pattern performing?" | Calls `pacifica_journal_pattern_stats` |
 
 ---
 
-## Agent Safety Guardrails
+## MCP Tools (23)
 
-Every agent action is checked before execution:
+### Read (8)
+
+| Tool | What it does |
+|------|-------------|
+| `pacifica_get_markets` | All markets with price, volume, OI, funding |
+| `pacifica_get_ticker` | Single market ticker |
+| `pacifica_get_orderbook` | Bids/asks with depth |
+| `pacifica_get_positions` | Open positions with P&L and liquidation |
+| `pacifica_get_account` | Account balance, equity, margin |
+| `pacifica_get_orders` | Open orders |
+| `pacifica_agent_status` | Guardrail config and daily spending |
+| `pacifica_agent_log` | Agent action audit trail |
+
+### Analytics (2)
+
+| Tool | What it does |
+|------|-------------|
+| `pacifica_trade_journal` | Trade history with symbol filter |
+| `pacifica_pnl_summary` | Win rate, total P&L, fees, stats |
+
+### Funding (2)
+
+| Tool | What it does |
+|------|-------------|
+| `pacifica_funding_rates` | Current rates for all markets with APR |
+| `pacifica_funding_history` | Historical rates for one market |
+
+### Write (4)
+
+| Tool | What it does |
+|------|-------------|
+| `pacifica_place_order` | Market or limit order with TP/SL, leverage |
+| `pacifica_cancel_order` | Cancel an open order |
+| `pacifica_close_position` | Close via reduce-only market order |
+| `pacifica_set_tpsl` | Set/update take-profit and stop-loss |
+
+### Pattern (7)
+
+| Tool | What it does |
+|------|-------------|
+| `pacifica_list_patterns` | List all user-authored patterns |
+| `pacifica_get_pattern` | Get one pattern by name |
+| `pacifica_run_pattern` | Evaluate pattern conditions against live market |
+| `pacifica_simulate_pattern` | Simulate entry: liquidation, P&L, funding cost |
+| `pacifica_backtest_pattern` | Replay against 30 days of hourly candles |
+| `pacifica_save_pattern` | Save a pattern to ~/.pacifica/patterns/ |
+| `pacifica_journal_pattern_stats` | Per-pattern win-rate and P&L stats |
+
+> All write tools pass through the guardrail system.
+
+---
+
+## CLI Commands
+
+### Markets & Data
+
+```bash
+pacifica scan                              # live market overview
+pacifica funding                           # funding rates sorted by APR
+pacifica simulate long BTC 1000 --lev 5    # pre-trade risk calculator
+```
+
+### Trading
+
+```bash
+pacifica trade buy  <symbol> <size>                    # market long
+pacifica trade sell <symbol> <size>                    # market short
+pacifica trade buy  <symbol> <size> --lev 10 --tp 4200 --sl 3600
+```
+
+### Positions & Orders
+
+```bash
+pacifica positions                         # open positions with P&L
+pacifica positions close <symbol>          # close at market
+pacifica orders                            # list open orders
+pacifica orders cancel <id>                # cancel one
+```
+
+### Patterns
+
+```bash
+pacifica patterns list                     # your pattern library
+pacifica patterns show <name>              # inspect one pattern
+pacifica patterns new                      # interactive creation wizard
+pacifica patterns copy <example>           # copy example to your library
+pacifica patterns validate <file>          # check a YAML file
+pacifica backtest <name> --days 30         # replay against history
+```
+
+### Journal
+
+```bash
+pacifica journal                           # recent trades
+pacifica journal --weekly                  # daily P&L for 7 days
+pacifica journal --pattern <name>          # filter by pattern
+pacifica journal export --format csv       # export to file
+```
+
+### Agent
+
+```bash
+pacifica agent status                      # guardrails & budget
+pacifica agent config                      # edit limits
+pacifica agent log                         # audit trail
+```
+
+---
+
+## Pattern Format
+
+Patterns are YAML files in `~/.pacifica/patterns/`. Here's the schema:
+
+```yaml
+name: funding-carry-btc            # kebab-case, matches filename
+description: Long BTC when funding is deeply negative
+tags: [funding, carry, btc]
+market: BTC-USDC-PERP              # or "ANY" for market-agnostic
+
+# Optional: compose conditions from other patterns
+include:
+  - price-breakout-btc             # inherits that pattern's when: conditions
+
+when:                              # ALL must be true (AND)
+  - axis: funding_rate
+    op: lt
+    value: -0.0003
+    label: "deeply negative funding"
+
+entry:
+  side: long
+  size_usd: 500
+  leverage: 3
+  stop_loss_pct: 2.0               # optional
+  take_profit_pct: 1.5             # optional
+
+exit:                              # ANY true triggers exit (OR)
+  - axis: funding_rate
+    op: gt
+    value: 0
+    label: "funding flipped positive"
+```
+
+### Available condition axes
+
+| Axis | Source | Backtestable? |
+|------|--------|--------------|
+| `mark_price` | Current mark price | Yes |
+| `volume_24h_usd` | 24h volume in USD | Yes |
+| `funding_rate` | Current funding rate | No (live only) |
+| `oi_change_4h_pct` | OI change over 4h | No |
+| `buy_pressure` | Buy/sell ratio | No |
+| `momentum_value` | Momentum signal strength | No |
+| `large_orders_count` | Whale order count | No |
+| `open_interest_usd` | Total open interest | No |
+
+> Non-backtestable axes are treated as false during backtest. The CLI and MCP tool clearly surface which axes were skipped.
+
+### Example Patterns (9 included)
+
+| Pattern | Strategy |
+|---------|----------|
+| `funding-carry-btc` | Long BTC when funding deeply negative |
+| `trend-continuation-eth` | Long ETH on momentum + whale activity |
+| `price-breakout-btc` | Long BTC on price breakout (fully backtestable) |
+| `mean-reversion-eth` | Short ETH on overbought momentum |
+| `range-bound-sol` | Long SOL at range floor with volume confirmation |
+| `volume-spike-entry` | Long any asset on volume spike |
+| `funding-flip-short` | Short BTC when funding spikes positive |
+| `whale-accumulation` | Long when whales accumulating |
+| `conservative-btc-long` | BTC breakout + funding gate (uses `include:`) |
+
+---
+
+## Agent Guardrails
+
+Every MCP write action is checked:
 
 ```
 Agent call
-   │
-   ├─ ① Agent enabled?
-   ├─ ② Action in blocked list?        → reject
-   ├─ ③ Action in allowed list?        → reject if not
-   ├─ ④ Order size ≤ max_order_size?   → reject if over
-   ├─ ⑤ Leverage ≤ max_leverage?       → reject if over
-   └─ ⑥ Daily spend + order ≤ budget?  → reject if over
-          │
-          └─ amount > confirm_threshold? → ask for confirmation
+   |
+   +- 1. Agent enabled?
+   +- 2. Action in blocked list?        -> reject
+   +- 3. Action in allowed list?        -> reject if not
+   +- 4. Order size <= max_order_size?   -> reject if over
+   +- 5. Leverage <= max_leverage?       -> reject if over
+   +- 6. Daily spend + order <= budget?  -> reject if over
 ```
 
-Configure limits in `~/.pacifica.yaml`:
+Configure in `~/.pacifica.yaml`:
 
 ```yaml
 agent:
   enabled: true
-  daily_spending_limit: 5000   # USD
-  max_order_size: 2000         # USD per order
+  daily_spending_limit: 5000
+  max_order_size: 2000
   max_leverage: 5
-  allowed_actions:
-    - place_order
-    - close_position
-    - cancel_order
-    - set_tpsl
-  require_confirmation_above: 1000
 ```
+
+---
+
+## Web Dashboard
+
+The web app at `web/` provides a browser interface for pattern exploration and trade simulation.
+
+```bash
+cd web && pnpm dev
+```
+
+| Route | Page |
+|-------|------|
+| `/` | Landing page with pattern showcase |
+| `/patterns` | Pattern library with stats |
+| `/patterns/[id]` | Pattern detail with conditions |
+| `/simulate` | Pre-trade risk calculator with live charts |
+| `/backtest/[name]` | Backtest results with equity curve |
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        User / Agent                         │
-└──────────────────┬───────────────────┬──────────────────────┘
-                   │                   │
-         ┌─────────▼──────┐   ┌────────▼────────┐
-         │   CLI (TUI)    │   │   MCP Server    │
-         │  Commander.js  │   │  stdio / tools  │
-         │  Ink (React)   │   │   28 tools      │
-         └─────────┬──────┘   └────────┬────────┘
-                   │                   │
-         ┌─────────▼───────────────────▼──────┐
-         │             Core Layer              │
-         │                                     │
-         │  ┌───────────┐  ┌───────────────┐  │
-         │  │  SDK      │  │   Agent       │  │
-         │  │  Client   │  │   Guardrails  │  │
-         │  │  Signer   │  │   Spending    │  │
-         │  │  WS       │  │   Logger      │  │
-         │  └─────┬─────┘  └───────────────┘  │
-         │        │                            │
-         │  ┌─────┴──────────────────────┐     │
-         │  │  Smart Orders · Risk Calc  │     │
-         │  │  Journal · Config          │     │
-         │  └────────────────────────────┘     │
-         └────────────────┬────────────────────┘
-                          │
-         ┌────────────────▼────────────────────┐
-         │          Pacifica DEX API            │
-         │   REST (signed Ed25519) + WebSocket  │
-         │   Testnet: test-api.pacifica.fi      │
-         │   Mainnet: api.pacifica.fi           │
-         └─────────────────────────────────────┘
+                     ┌─────────────────┐
+                     │   You / Claude   │
+                     └────────┬────────┘
+                              |
+              ┌───────────────┼───────────────┐
+              |               |               |
+     ┌────────v──────┐ ┌─────v─────┐ ┌───────v──────┐
+     │  CLI (11 cmd) │ │ MCP (23)  │ │  Web (5 pg)  │
+     │  Commander.js │ │  stdio    │ │  Next.js 14  │
+     └────────┬──────┘ └─────┬─────┘ └───────┬──────┘
+              |               |               |
+     ┌────────v───────────────v───────────────v──────┐
+     │                  Core Layer                    │
+     │  patterns/ · sdk/ · journal/ · agent/ · arb/  │
+     └──────────────────────┬────────────────────────┘
+                            |
+     ┌──────────────────────v────────────────────────┐
+     │              Pacifica DEX API                  │
+     │   REST (Ed25519 signed) + WebSocket            │
+     │   testnet: test-api.pacifica.fi                │
+     └────────────────────────────────────────────────┘
 ```
-
----
-
-## Local Data Files
-
-All data is stored locally — no external database required:
-
-| File | Purpose |
-|------|---------|
-| `~/.pacifica.yaml` | Config: network, keys, agent limits |
-| `~/.pacifica/spending.json` | Daily budget ledger (auto-resets midnight) |
-| `~/.pacifica/agent-log.json` | Append-only audit trail of all agent actions |
-| `~/.pacifica/journal.json` | Trade log: fills, closes, smart order triggers |
-| `~/.pacifica/smart-orders.json` | Active trailing stops & partial take-profits |
-
-> All files are created with `chmod 0o600` (owner read/write only).
 
 ---
 
@@ -324,15 +479,12 @@ All data is stored locally — no external database required:
 
 | Track | Tech |
 |-------|------|
-| Pacifica DEX | Perpetuals trading, Ed25519 signing, WebSocket feeds |
-| Claude MCP | 28 tools with full guardrail enforcement |
-| Solana | Keypair auth, base58 encoding |
-| Terminal UI | Ink (React-in-terminal), Commander.js |
-
----
+| Pacifica DEX | Perpetuals, Ed25519 signing, WebSocket |
+| Claude MCP | 23 tools, pattern primitive, guardrails |
+| Solana | Keypair auth, base58 |
 
 <div align="center">
 
-**[Pacifica DEX](https://test-app.pacifica.fi)** · **[Report an Issue](../../issues)** · **[The Synthesis Hackathon](https://synthesis.so)**
+**[Pacifica DEX](https://test-app.pacifica.fi)** &middot; **[Report an Issue](../../issues)** &middot; **[The Synthesis](https://synthesis.so)**
 
 </div>

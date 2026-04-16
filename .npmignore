@@ -1,8 +1,34 @@
-web/
-test/
-plans/
-context/
+# Source code (shipped as built dist/)
 src/
+
+# Web app (not part of the npm package)
+web/
+
+# Dev artifacts
+plans/
+agents/
+context/
+scripts/
+docs/
+skills/
+test/
 .claude/
-*.md
-!README.md
+.github/
+
+# Config (not needed by users)
+tsconfig.json
+tsup.config.ts
+vitest.config.ts
+.gitignore
+
+# Dev docs
+AGENTS.md
+CONTEXT.md
+DEMO_GUIDE.md
+PROPOSAL.md
+CHANGELOG.md
+
+# Source files the build already bundles
+*.test.ts
+*.spec.ts
+*.map

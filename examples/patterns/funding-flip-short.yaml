@@ -1,0 +1,32 @@
+# Pattern: funding-flip-short
+# Short BTC when funding spikes positive and OI is surging — overleveraged
+# longs are about to get squeezed. Exit when funding normalises.
+
+name: funding-flip-short
+description: Short BTC on spiking positive funding — longs are overleveraged.
+tags: [funding, short, btc]
+
+market: BTC-USDC-PERP
+
+when:
+  - axis: funding_rate
+    op: gt
+    value: 0.0005           # funding > 0.05% per interval
+    label: "funding spiking positive — longs paying heavily"
+  - axis: oi_change_4h_pct
+    op: gt
+    value: 8
+    label: "OI surging — new leveraged longs piling in"
+
+entry:
+  side: short
+  size_usd: 750
+  leverage: 3
+  stop_loss_pct: 2.5
+  take_profit_pct: 3.0
+
+exit:
+  - axis: funding_rate
+    op: lt
+    value: 0
+    label: "funding flipped negative — squeeze is done"

@@ -95,19 +95,17 @@ export function PatternCard({
         </div>
       </div>
 
-      {/* Clickable asset chips */}
+      {/* Asset chips */}
       <div className="flex gap-1.5 flex-wrap mb-3">
         {pattern.primary_assets.map((a) => {
           const sym = stripSym(a);
           return (
-            <Link
+            <span
               key={a}
-              href={`/snapshot/${sym}`}
-              onClick={(e) => e.stopPropagation()}
-              className="text-[10px] px-2 py-0.5 bg-[#0A0A0A] border border-neutral-500/20 rounded text-neutral-400 hover:border-orange-500/40 hover:text-orange-500 transition-colors"
+              className="text-[10px] px-2 py-0.5 bg-[#0A0A0A] border border-neutral-500/20 rounded text-neutral-400"
             >
               {sym}
-            </Link>
+            </span>
           );
         })}
       </div>
@@ -118,14 +116,6 @@ export function PatternCard({
 
       {/* Action bar */}
       <div className="flex items-center gap-2 pt-3 border-t border-neutral-500/10 text-[11px] font-mono">
-        <Link
-          href={`/snapshot/${primarySym}`}
-          onClick={(e) => e.stopPropagation()}
-          className="text-neutral-400 hover:text-orange-500 transition-colors"
-        >
-          Snapshot →
-        </Link>
-        <span className="text-neutral-600">·</span>
         <Link
           href={`/simulate?side=${side}&symbol=${primarySym}&patternId=${pattern.id}`}
           onClick={(e) => e.stopPropagation()}

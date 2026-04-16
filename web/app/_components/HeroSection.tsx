@@ -100,7 +100,7 @@ export function HeroSection() {
           </div>
 
           {/* CTAs */}
-          <div className="flex items-center justify-center gap-3 mt-2">
+          <div className="flex items-center justify-center gap-3 mt-2 flex-wrap">
             <Link
               href="/patterns"
               className="text-black bg-orange-500 px-4 py-1.5 text-sm font-medium hover:bg-orange-400 transition-colors"
@@ -109,15 +109,29 @@ export function HeroSection() {
             </Link>
 
             <Link
-              href="/snapshot/ETH"
+              href="/simulate"
               className="relative hover:bg-orange-900/30 text-white px-3 py-1.5 text-sm font-medium border border-orange-900/30 transition-colors"
             >
               <span className="absolute top-0 left-0 h-2 w-2 border-t border-l border-orange-500" />
               <span className="absolute top-0 right-0 h-2 w-2 border-t border-r border-orange-500" />
               <span className="absolute bottom-0 left-0 h-2 w-2 border-b border-l border-orange-500" />
               <span className="absolute bottom-0 right-0 h-2 w-2 border-b border-r border-orange-500" />
-              Market Snapshot
+              Simulate a Trade
             </Link>
+
+            <a
+              href="https://amethyst-owl-727.faces.site/onz0fhx37iqd"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="relative hover:bg-orange-900/30 text-neutral-300 px-3 py-1.5 text-sm font-medium border border-neutral-500/40 transition-colors flex items-center gap-1.5"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                <line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
+              </svg>
+              View Slides
+            </a>
           </div>
 
           {/* Stat strip */}

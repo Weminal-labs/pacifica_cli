@@ -6,7 +6,8 @@
   "bin": {
     "pacifica": "dist/cli.js",
     "pacifica-cli": "dist/cli.js",
-    "pacifica-mcp": "dist/mcp.js"
+    "pacifica-mcp": "dist/mcp.js",
+    "pacifica-mcp-http": "dist/mcp-http.js"
   },
   "scripts": {
     "dev": "tsx src/cli/index.ts",
@@ -21,12 +22,30 @@
     "trading",
     "cli",
     "mcp",
-    "terminal"
+    "terminal",
+    "perpetuals",
+    "solana",
+    "claude",
+    "anthropic",
+    "ai-agent",
+    "backtest",
+    "pattern"
   ],
   "license": "MIT",
+  "author": "Weminal Labs",
+  "homepage": "https://pacifica-intelligence.pages.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Weminal-labs/pacifica_cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Weminal-labs/pacifica_cli/issues"
+  },
   "files": [
     "dist",
-    "README.md"
+    "examples",
+    "README.md",
+    "LICENSE"
   ],
   "packageManager": "pnpm@10.7.1",
   "engines": {
