@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
 
 import type { PacificaClient } from "../core/sdk/client.js";
+import { JournalLogger } from "../core/journal/logger.js";
 import {
   loadPatterns,
   loadPattern,
@@ -260,6 +261,32 @@ export function registerPatternTools(server: McpServer, client: PacificaClient):
         return ok({ saved: true, path, name: obj.name });
       } catch (err) {
         return fail(`save_pattern failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  server.tool(
+    "pacifica_journal_pattern_stats",
+    "Return per-pattern win-rate and P&L statistics from the local trade journal. When a name is provided, returns stats for that single pattern; otherwise returns grouped stats for all patterns.",
+    {
+      name: z.string().max(100).optional().describe("Pattern name to filter by. Omit to get stats for all patterns."),
+    },
+    async ({ name }) => {
+      try {
+        const journal = new JournalLogger();
+
+        if (name) {
+          const summary = await journal.getPatternSummary(name);
+          return ok(summary);
+        }
+
+        const stats = await journal.getPatternStats();
+        if (stats.length === 0) {
+          return ok({ message: "No trades with pattern tags found in the journal.", patterns: [] });
+        }
+        return ok({ count: stats.length, patterns: stats });
+      } catch (err) {
+        return fail(`journal_pattern_stats failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
   );
