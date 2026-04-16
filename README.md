@@ -4,13 +4,17 @@
 
 **Agent-native trading terminal for [Pacifica DEX](https://test-app.pacifica.fi)**
 
+[![Live site](https://img.shields.io/badge/web-pacifica--intelligence.pages.dev-orange?style=flat-square)](https://pacifica-intelligence.pages.dev)
+[![MCP Guide](https://img.shields.io/badge/MCP-setup_guide-purple?style=flat-square)](https://pacifica-intelligence.pages.dev/mcp)
+[![Slides](https://img.shields.io/badge/slides-presentation-red?style=flat-square)](https://amethyst-owl-727.faces.site/onz0fhx37iqd)
 [![Version](https://img.shields.io/badge/version-0.1.0-blue?style=flat-square)](package.json)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square&logo=node.js)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-orange?style=flat-square)](LICENSE)
-[![MCP](https://img.shields.io/badge/MCP-28_tools-purple?style=flat-square)](src/mcp/server.ts)
 [![Network](https://img.shields.io/badge/network-Solana-9945FF?style=flat-square&logo=solana)](https://solana.com)
 
 *One codebase. Three interfaces. Full agent control.*
+
+**Live Demo:** [pacifica-intelligence.pages.dev](https://pacifica-intelligence.pages.dev) &middot; **MCP Guide:** [/mcp](https://pacifica-intelligence.pages.dev/mcp) &middot; **Slides:** [view presentation](https://amethyst-owl-727.faces.site/onz0fhx37iqd)
 
 </div>
 
