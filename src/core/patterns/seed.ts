@@ -12,6 +12,7 @@
 // ---------------------------------------------------------------------------
 
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
+import { readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPatternsDir } from "./loader.js";
@@ -27,10 +28,9 @@ function findExamplesDir(): string | null {
   for (let dir = here, i = 0; i < 6; i++, dir = dirname(dir)) {
     const candidate = join(dir, "examples", "patterns");
     try {
-      // Sync existsCheck would need fs.existsSync; instead try readdir later
-      // and treat ENOENT as "keep looking."
+      readdirSync(candidate);
       return candidate;
-    } catch { /* noop */ }
+    } catch { /* keep looking */ }
   }
   return null;
 }

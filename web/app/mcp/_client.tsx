@@ -8,9 +8,22 @@ import { OrangeLabel } from "../../components/ui/OrangeLabel";
 // Data
 // ---------------------------------------------------------------------------
 
+/**
+ * Status indicates what a prompt needs to work:
+ *  - ready:     Works immediately after MCP is connected (no setup)
+ *  - account:   Needs `pacifica init --testnet` (account configured)
+ *  - positions: Needs open positions (or will return empty)
+ *  - patterns:  Needs patterns in ~/.pacifica/patterns/ (auto-seeded by init)
+ *  - journal:   Needs pattern-tagged journal entries (seed or place tagged trades)
+ *  - order:     Places a REAL order on the testnet — costs testnet USDC
+ *  - multi:     Multi-step workflow (Claude chains multiple tools)
+ */
+type Status = "ready" | "account" | "positions" | "patterns" | "journal" | "order" | "multi";
+
 interface Prompt {
   text: string;
   tool: string;
+  status: Status;
 }
 
 interface Category {
@@ -21,6 +34,16 @@ interface Category {
   prompts: Prompt[];
 }
 
+const STATUS_META: Record<Status, { label: string; color: string; desc: string }> = {
+  ready:     { label: "READY",     color: "text-green-400 border-green-400/40 bg-green-400/10",   desc: "Works instantly" },
+  account:   { label: "ACCOUNT",   color: "text-blue-400 border-blue-400/40 bg-blue-400/10",      desc: "Needs `pacifica init`" },
+  positions: { label: "POSITIONS", color: "text-cyan-400 border-cyan-400/40 bg-cyan-400/10",      desc: "Needs open positions" },
+  patterns:  { label: "PATTERNS",  color: "text-orange-400 border-orange-400/40 bg-orange-400/10",desc: "Patterns auto-seeded by init" },
+  journal:   { label: "JOURNAL",   color: "text-purple-400 border-purple-400/40 bg-purple-400/10",desc: "Needs pattern-tagged trades" },
+  order:     { label: "PLACES ORDER", color: "text-red-400 border-red-400/40 bg-red-400/10",      desc: "Will place a REAL testnet order" },
+  multi:     { label: "MULTI-STEP",color: "text-amber-400 border-amber-400/40 bg-amber-400/10",   desc: "Chains multiple tools" },
+};
+
 const CATEGORIES: Category[] = [
   {
     id: "markets",
@@ -28,13 +51,13 @@ const CATEGORIES: Category[] = [
     icon: "chart",
     description: "Real-time market data, prices, order books, and volume.",
     prompts: [
-      { text: "Show me all markets", tool: "pacifica_get_markets" },
-      { text: "What's the BTC price right now?", tool: "pacifica_get_ticker" },
-      { text: "How's ETH doing?", tool: "pacifica_get_ticker" },
-      { text: "Show me the SOL order book", tool: "pacifica_get_orderbook" },
-      { text: "What's the spread on BTC?", tool: "pacifica_get_orderbook" },
-      { text: "Which markets have the highest volume?", tool: "pacifica_get_markets" },
-      { text: "Find me markets with negative funding", tool: "pacifica_get_markets" },
+      { text: "Show me all markets", tool: "pacifica_get_markets", status: "ready" },
+      { text: "What's the BTC price right now?", tool: "pacifica_get_ticker", status: "ready" },
+      { text: "How's ETH doing?", tool: "pacifica_get_ticker", status: "ready" },
+      { text: "Show me the SOL order book", tool: "pacifica_get_orderbook", status: "ready" },
+      { text: "What's the spread on BTC?", tool: "pacifica_get_orderbook", status: "ready" },
+      { text: "Which markets have the highest volume?", tool: "pacifica_get_markets", status: "ready" },
+      { text: "Find me markets with negative funding", tool: "pacifica_get_markets", status: "ready" },
     ],
   },
   {
@@ -43,11 +66,11 @@ const CATEGORIES: Category[] = [
     icon: "percent",
     description: "Funding rates, APR calculations, and historical data.",
     prompts: [
-      { text: "Show funding rates", tool: "pacifica_funding_rates" },
-      { text: "Which coins pay you to hold long?", tool: "pacifica_funding_rates" },
-      { text: "What's the funding APR on BTC?", tool: "pacifica_funding_rates" },
-      { text: "Show me BTC funding history", tool: "pacifica_funding_history" },
-      { text: "Has ETH funding been negative this week?", tool: "pacifica_funding_history" },
+      { text: "Show funding rates", tool: "pacifica_funding_rates", status: "ready" },
+      { text: "Which coins pay you to hold long?", tool: "pacifica_funding_rates", status: "ready" },
+      { text: "What's the funding APR on BTC?", tool: "pacifica_funding_rates", status: "ready" },
+      { text: "Show me BTC funding history", tool: "pacifica_funding_history", status: "ready" },
+      { text: "Has ETH funding been negative this week?", tool: "pacifica_funding_history", status: "ready" },
     ],
   },
   {
@@ -56,29 +79,28 @@ const CATEGORIES: Category[] = [
     icon: "wallet",
     description: "Balance, positions, P&L, orders, and trade history.",
     prompts: [
-      { text: "What are my positions?", tool: "pacifica_get_positions" },
-      { text: "Am I in profit?", tool: "pacifica_get_positions" },
-      { text: "Show my account balance", tool: "pacifica_get_account" },
-      { text: "How much margin am I using?", tool: "pacifica_get_account" },
-      { text: "Do I have any open orders?", tool: "pacifica_get_orders" },
-      { text: "What's my total P&L?", tool: "pacifica_pnl_summary" },
-      { text: "Show my win rate", tool: "pacifica_pnl_summary" },
-      { text: "Show my recent trades", tool: "pacifica_trade_journal" },
-      { text: "Show my ETH trade history", tool: "pacifica_trade_journal" },
+      { text: "Show my account balance", tool: "pacifica_get_account", status: "account" },
+      { text: "How much margin am I using?", tool: "pacifica_get_account", status: "account" },
+      { text: "What are my positions?", tool: "pacifica_get_positions", status: "positions" },
+      { text: "Am I in profit?", tool: "pacifica_get_positions", status: "positions" },
+      { text: "Do I have any open orders?", tool: "pacifica_get_orders", status: "account" },
+      { text: "Show my overall P&L summary", tool: "pacifica_pnl_summary", status: "account" },
+      { text: "Show my win rate from Pacifica history", tool: "pacifica_pnl_summary", status: "account" },
+      { text: "Show my recent trades", tool: "pacifica_trade_journal", status: "account" },
+      { text: "Show my ETH trade history", tool: "pacifica_trade_journal", status: "account" },
     ],
   },
   {
     id: "trading",
     label: "Place Trades",
     icon: "zap",
-    description: "Market orders, limit orders, leverage, and TP/SL.",
+    description: "Market orders, limit orders, leverage, and TP/SL. Uses real testnet USDC.",
     prompts: [
-      { text: "Buy 0.01 BTC", tool: "pacifica_place_order" },
-      { text: "Long 0.5 ETH with 3x leverage", tool: "pacifica_place_order" },
-      { text: "Short 100 WIF at 5x", tool: "pacifica_place_order" },
-      { text: "Buy 10 SOL with TP at 90 and SL at 80", tool: "pacifica_place_order" },
-      { text: "Place a limit buy on ETH at $2,300", tool: "pacifica_place_order" },
-      { text: "Long 0.01 BTC with 2x leverage, take profit at 80000, stop loss at 70000", tool: "pacifica_place_order" },
+      { text: "Buy 0.01 BTC with 3x leverage", tool: "pacifica_place_order", status: "order" },
+      { text: "Long 0.5 SOL with 3x leverage", tool: "pacifica_place_order", status: "order" },
+      { text: "Short 100 WIF at 5x", tool: "pacifica_place_order", status: "order" },
+      { text: "Buy 0.01 BTC with TP at 80000 and SL at 70000", tool: "pacifica_place_order", status: "order" },
+      { text: "Place a limit buy on ETH 0.1 at $2,300", tool: "pacifica_place_order", status: "order" },
     ],
   },
   {
@@ -87,12 +109,11 @@ const CATEGORIES: Category[] = [
     icon: "settings",
     description: "Close positions, set TP/SL, cancel orders.",
     prompts: [
-      { text: "Close my BTC position", tool: "pacifica_close_position" },
-      { text: "Close everything on SOL", tool: "pacifica_close_position" },
-      { text: "Set take profit on my ETH at $2,500", tool: "pacifica_set_tpsl" },
-      { text: "Put a stop loss on BTC at $70,000", tool: "pacifica_set_tpsl" },
-      { text: "Set TP at 90 and SL at 75 on my SOL long", tool: "pacifica_set_tpsl" },
-      { text: "Cancel order 308830202", tool: "pacifica_cancel_order" },
+      { text: "Close my BTC position", tool: "pacifica_close_position", status: "positions" },
+      { text: "Close my SOL position", tool: "pacifica_close_position", status: "positions" },
+      { text: "Set take profit on my ETH long at $2,500", tool: "pacifica_set_tpsl", status: "positions" },
+      { text: "Put a stop loss on BTC at $70,000", tool: "pacifica_set_tpsl", status: "positions" },
+      { text: "Cancel order 308830202", tool: "pacifica_cancel_order", status: "account" },
     ],
   },
   {
@@ -101,13 +122,13 @@ const CATEGORIES: Category[] = [
     icon: "code",
     description: "List, inspect, and author YAML trading patterns.",
     prompts: [
-      { text: "List my patterns", tool: "pacifica_list_patterns" },
-      { text: "Show me the funding-carry-btc pattern", tool: "pacifica_get_pattern" },
-      { text: "What patterns do I have?", tool: "pacifica_list_patterns" },
-      { text: "Write me a pattern that longs BTC when funding is deeply negative", tool: "pacifica_save_pattern" },
-      { text: "Create a pattern that shorts ETH when momentum is above 0.7", tool: "pacifica_save_pattern" },
-      { text: "Write a mean-reversion pattern for SOL that enters when buy pressure exceeds 80%", tool: "pacifica_save_pattern" },
-      { text: "Save a pattern called 'my-first-btc' that longs BTC when price breaks above 75000 with 3x leverage and 2% stop loss", tool: "pacifica_save_pattern" },
+      { text: "List my patterns", tool: "pacifica_list_patterns", status: "patterns" },
+      { text: "Show me the funding-carry-btc pattern", tool: "pacifica_get_pattern", status: "patterns" },
+      { text: "Show me the price-breakout-btc pattern", tool: "pacifica_get_pattern", status: "patterns" },
+      { text: "What patterns do I have?", tool: "pacifica_list_patterns", status: "patterns" },
+      { text: "Write me a pattern that longs BTC when funding is deeply negative, call it my-carry-btc", tool: "pacifica_save_pattern", status: "ready" },
+      { text: "Create a pattern called my-breakout that longs BTC when price breaks above 75000 with 3x leverage", tool: "pacifica_save_pattern", status: "ready" },
+      { text: "Save a pattern that shorts ETH when momentum is above 0.7, 2x leverage, call it overbought-eth", tool: "pacifica_save_pattern", status: "ready" },
     ],
   },
   {
@@ -116,14 +137,14 @@ const CATEGORIES: Category[] = [
     icon: "play",
     description: "Evaluate patterns live, simulate entries, and backtest against history.",
     prompts: [
-      { text: "Does my funding-carry-btc pattern match right now?", tool: "pacifica_run_pattern" },
-      { text: "Run my trend-continuation-eth pattern against the current market", tool: "pacifica_run_pattern" },
-      { text: "Check if any of my patterns are triggering", tool: "pacifica_run_pattern" },
-      { text: "Simulate my funding-carry-btc pattern", tool: "pacifica_simulate_pattern" },
-      { text: "What would happen if I entered with my price-breakout-btc pattern?", tool: "pacifica_simulate_pattern" },
-      { text: "Backtest funding-carry-btc over 30 days", tool: "pacifica_backtest_pattern" },
-      { text: "How did my price-breakout-btc pattern perform over the last 60 days?", tool: "pacifica_backtest_pattern" },
-      { text: "Backtest all my patterns and tell me which one has the best win rate", tool: "pacifica_backtest_pattern" },
+      { text: "Does my funding-carry-btc pattern match right now?", tool: "pacifica_run_pattern", status: "patterns" },
+      { text: "Run my price-breakout-btc pattern against the current market", tool: "pacifica_run_pattern", status: "patterns" },
+      { text: "Check if any of my patterns are triggering", tool: "pacifica_run_pattern", status: "patterns" },
+      { text: "Simulate my funding-carry-btc pattern", tool: "pacifica_simulate_pattern", status: "patterns" },
+      { text: "What would happen if I entered with my price-breakout-btc pattern?", tool: "pacifica_simulate_pattern", status: "patterns" },
+      { text: "Backtest price-breakout-btc over 30 days", tool: "pacifica_backtest_pattern", status: "patterns" },
+      { text: "How did my price-breakout-btc pattern perform over the last 60 days?", tool: "pacifica_backtest_pattern", status: "patterns" },
+      { text: "Backtest all my price-based patterns and compare win rates", tool: "pacifica_backtest_pattern", status: "multi" },
     ],
   },
   {
@@ -132,9 +153,9 @@ const CATEGORIES: Category[] = [
     icon: "bar-chart",
     description: "Track win rates and P&L per pattern over time.",
     prompts: [
-      { text: "How is my funding-carry-btc pattern performing?", tool: "pacifica_journal_pattern_stats" },
-      { text: "Show me win rate per pattern", tool: "pacifica_journal_pattern_stats" },
-      { text: "Which pattern makes me the most money?", tool: "pacifica_journal_pattern_stats" },
+      { text: "How is my funding-carry-btc pattern performing?", tool: "pacifica_journal_pattern_stats", status: "journal" },
+      { text: "Show me win rate per pattern", tool: "pacifica_journal_pattern_stats", status: "journal" },
+      { text: "Which pattern makes me the most money?", tool: "pacifica_journal_pattern_stats", status: "journal" },
     ],
   },
   {
@@ -143,10 +164,10 @@ const CATEGORIES: Category[] = [
     icon: "shield",
     description: "Guardrails, spending limits, and audit trail.",
     prompts: [
-      { text: "What are my guardrail settings?", tool: "pacifica_agent_status" },
-      { text: "How much of my daily budget have I used?", tool: "pacifica_agent_status" },
-      { text: "Show me the agent audit log", tool: "pacifica_agent_log" },
-      { text: "What did the agent do today?", tool: "pacifica_agent_log" },
+      { text: "What are my guardrail settings?", tool: "pacifica_agent_status", status: "account" },
+      { text: "How much of my daily budget have I used?", tool: "pacifica_agent_status", status: "account" },
+      { text: "Show me the agent audit log", tool: "pacifica_agent_log", status: "account" },
+      { text: "What did the agent do today?", tool: "pacifica_agent_log", status: "account" },
     ],
   },
   {
@@ -155,19 +176,19 @@ const CATEGORIES: Category[] = [
     icon: "layers",
     description: "Complex requests where Claude chains multiple tools automatically.",
     prompts: [
-      { text: "Scan for opportunities and suggest a trade", tool: "multi-tool" },
-      { text: "Run all my patterns and tell me what's matching", tool: "multi-tool" },
-      { text: "I want to do a funding carry trade \u2014 find the best opportunity", tool: "multi-tool" },
-      { text: "Review my portfolio and suggest what to close", tool: "multi-tool" },
-      { text: "Write me a pattern, backtest it, and if it looks good, run it", tool: "multi-tool" },
-      { text: "Compare my BTC and ETH positions \u2014 which should I add to?", tool: "multi-tool" },
-      { text: "Create a conservative long pattern for SOL, test it over 30 days", tool: "multi-tool" },
-      { text: "What's the safest trade I can make right now based on funding?", tool: "multi-tool" },
-      { text: "Am I at risk of liquidation on any position?", tool: "multi-tool" },
-      { text: "Morning briefing \u2014 balance, positions, funding, pattern matches", tool: "multi-tool" },
-      { text: "End of day report \u2014 P&L, trades, agent activity", tool: "multi-tool" },
-      { text: "Help me build a pattern from scratch", tool: "multi-tool" },
-      { text: "Is it a good time to long BTC?", tool: "multi-tool" },
+      { text: "Scan for opportunities and suggest a trade", tool: "multi", status: "multi" },
+      { text: "Run all my patterns and tell me what's matching", tool: "multi", status: "multi" },
+      { text: "I want to do a funding carry trade \u2014 find the best opportunity", tool: "multi", status: "multi" },
+      { text: "Review my portfolio and suggest what to close", tool: "multi", status: "multi" },
+      { text: "Write me a pattern, backtest it, and if it looks good, run it", tool: "multi", status: "multi" },
+      { text: "Compare my BTC and ETH positions \u2014 which should I add to?", tool: "multi", status: "multi" },
+      { text: "Create a conservative long pattern for SOL, test it over 30 days", tool: "multi", status: "multi" },
+      { text: "What's the safest trade I can make right now based on funding?", tool: "multi", status: "multi" },
+      { text: "Am I at risk of liquidation on any position?", tool: "multi", status: "multi" },
+      { text: "Morning briefing \u2014 balance, positions, funding, pattern matches", tool: "multi", status: "multi" },
+      { text: "End of day report \u2014 P&L, trades, agent activity", tool: "multi", status: "multi" },
+      { text: "Help me build a pattern from scratch", tool: "multi", status: "multi" },
+      { text: "Is it a good time to long BTC?", tool: "multi", status: "multi" },
     ],
   },
 ];
@@ -193,7 +214,7 @@ const SETUP_CONTENT: Record<SetupTab, { steps: SetupStep[]; config: string; note
         code: "git clone https://github.com/Weminal-labs/pacifica_cli.git && cd pacifica_cli && pnpm install",
       },
       {
-        text: "Initialize your Pacifica account (you need a wallet from test-app.pacifica.fi with test USDC from the Faucet)",
+        text: "Initialize your Pacifica account (you need a wallet from test-app.pacifica.fi with test USDC from the Faucet). This command also auto-seeds example patterns into ~/.pacifica/patterns/.",
         link: { url: "https://test-app.pacifica.fi", label: "test-app.pacifica.fi" },
         code: "npx tsx src/cli/index.ts init --testnet",
       },
@@ -324,7 +345,7 @@ claude
 };
 
 // ---------------------------------------------------------------------------
-// Icons (inline SVG to avoid dependencies)
+// Icons
 // ---------------------------------------------------------------------------
 
 function Icon({ name }: { name: string }) {
@@ -369,13 +390,26 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function StatusPill({ status }: { status: Status }) {
+  const meta = STATUS_META[status];
+  return (
+    <span
+      title={meta.desc}
+      className={`text-[9px] font-mono font-bold px-1.5 py-0.5 border ${meta.color} shrink-0 tracking-wider`}
+    >
+      {meta.label}
+    </span>
+  );
+}
+
 function PromptRow({ prompt }: { prompt: Prompt }) {
   return (
     <div className="group flex items-center gap-3 py-2.5 px-3 hover:bg-white/[0.02] transition-colors">
       <span className="flex-1 text-sm text-neutral-300 font-mono">
         &ldquo;{prompt.text}&rdquo;
       </span>
-      <span className="hidden sm:inline text-[10px] font-mono text-neutral-600 bg-neutral-800/50 px-2 py-0.5 border border-neutral-700/30 shrink-0">
+      <StatusPill status={prompt.status} />
+      <span className="hidden md:inline text-[10px] font-mono text-neutral-600 bg-neutral-800/50 px-2 py-0.5 border border-neutral-700/30 shrink-0">
         {prompt.tool}
       </span>
       <CopyButton text={prompt.text} />
@@ -390,8 +424,21 @@ function PromptRow({ prompt }: { prompt: Prompt }) {
 export default function McpUsagePage() {
   const [activeSetup, setActiveSetup] = useState<SetupTab>("Claude Desktop");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<Status | null>(null);
 
   const totalPrompts = CATEGORIES.reduce((s, c) => s + c.prompts.length, 0);
+
+  // Filter prompts by status if a filter is active
+  const filteredCategories = CATEGORIES.map((cat) => ({
+    ...cat,
+    prompts: statusFilter
+      ? cat.prompts.filter((p) => p.status === statusFilter)
+      : cat.prompts,
+  })).filter((cat) => cat.prompts.length > 0);
+
+  const shownCategories = filteredCategories.filter(
+    (cat) => activeCategory === null || activeCategory === cat.id,
+  );
 
   return (
     <div className="px-6 py-12 pb-20 max-w-5xl mx-auto">
@@ -407,6 +454,58 @@ export default function McpUsagePage() {
         </p>
       </div>
 
+      {/* Before You Start — prominent prerequisites */}
+      <section className="mb-10 relative bg-gradient-to-br from-orange-500/10 to-transparent border border-orange-500/30 p-5">
+        <span className="absolute top-0 left-0 h-2 w-2 border-t border-l border-orange-500" />
+        <span className="absolute top-0 right-0 h-2 w-2 border-t border-r border-orange-500" />
+        <span className="absolute bottom-0 left-0 h-2 w-2 border-b border-l border-orange-500" />
+        <span className="absolute bottom-0 right-0 h-2 w-2 border-b border-r border-orange-500" />
+
+        <p className="text-orange-400 text-[11px] font-mono uppercase tracking-wider mb-2">
+          / Before you start &mdash; 3 steps
+        </p>
+        <ol className="space-y-2 text-sm text-neutral-300">
+          <li>
+            <span className="text-orange-500 font-bold font-mono mr-2">1.</span>
+            Go to{" "}
+            <a
+              href="https://test-app.pacifica.fi"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-orange-400 underline hover:text-orange-300"
+            >
+              test-app.pacifica.fi
+            </a>
+            , connect your Solana wallet, enter access code{" "}
+            <code className="bg-black/40 px-1.5 py-0.5 text-orange-400 font-mono text-xs">
+              Pacifica
+            </code>
+            , and use the Faucet to get test USDC.
+          </li>
+          <li>
+            <span className="text-orange-500 font-bold font-mono mr-2">2.</span>
+            Clone the repo and run the init wizard &mdash; this auto-seeds 9 example patterns into{" "}
+            <code className="bg-black/40 px-1.5 py-0.5 text-orange-400 font-mono text-xs">
+              ~/.pacifica/patterns/
+            </code>
+            .
+          </li>
+          <li>
+            <span className="text-orange-500 font-bold font-mono mr-2">3.</span>
+            Configure your Claude client (see the Setup section below) and
+            restart it. The hammer icon should show 23 Pacifica tools.
+          </li>
+        </ol>
+        <div className="mt-3 relative">
+          <pre className="bg-black/60 border border-neutral-500/10 px-3 py-2 text-[12px] font-mono text-green-400/90 overflow-x-auto">
+            git clone https://github.com/Weminal-labs/pacifica_cli.git{"\n"}cd pacifica_cli && pnpm install{"\n"}npx tsx src/cli/index.ts init --testnet
+          </pre>
+          <div className="absolute top-1 right-1">
+            <CopyButton text="git clone https://github.com/Weminal-labs/pacifica_cli.git && cd pacifica_cli && pnpm install && npx tsx src/cli/index.ts init --testnet" />
+          </div>
+        </div>
+      </section>
+
       {/* Setup Section */}
       <section className="mb-12">
         <OrangeLabel text="/ SETUP" />
@@ -414,7 +513,6 @@ export default function McpUsagePage() {
           Connect Claude to Pacifica
         </h2>
 
-        {/* Tab bar */}
         <div className="flex gap-0 border-b border-neutral-500/20 mb-4">
           {SETUP_TABS.map((tab) => (
             <button
@@ -431,7 +529,6 @@ export default function McpUsagePage() {
           ))}
         </div>
 
-        {/* Tab content */}
         <div className="relative bg-[#111111] border border-neutral-500/10 p-5">
           <span className="absolute top-0 left-0 h-1.5 w-1.5 border-t border-l border-orange-500/50" />
           <span className="absolute top-0 right-0 h-1.5 w-1.5 border-t border-r border-orange-500/50" />
@@ -493,9 +590,9 @@ export default function McpUsagePage() {
       </section>
 
       {/* 23 Tools badge */}
-      <div className="flex items-center gap-4 mb-8 p-4 bg-[#111111] border border-neutral-500/10">
+      <div className="flex items-center gap-4 mb-6 p-4 bg-[#111111] border border-neutral-500/10">
         <span className="text-2xl font-bold text-orange-500 font-mono">23</span>
-        <div>
+        <div className="flex-1">
           <p className="text-white text-sm font-semibold">MCP Tools Available</p>
           <p className="text-neutral-500 text-[11px] font-mono">
             8 read + 2 analytics + 2 funding + 4 write + 7 pattern
@@ -503,10 +600,49 @@ export default function McpUsagePage() {
         </div>
       </div>
 
+      {/* Status legend */}
+      <div className="mb-6">
+        <p className="text-[11px] font-mono text-neutral-500 uppercase tracking-wider mb-2">
+          / Prompt status legend &mdash; click to filter
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setStatusFilter(null)}
+            className={`text-[10px] font-mono font-bold px-2 py-1 border tracking-wider transition-all ${
+              statusFilter === null
+                ? "border-white/40 bg-white/10 text-white"
+                : "border-neutral-500/20 text-neutral-500 hover:text-white"
+            }`}
+          >
+            ALL &middot; {totalPrompts}
+          </button>
+          {(Object.keys(STATUS_META) as Status[]).map((s) => {
+            const count = CATEGORIES.reduce(
+              (n, c) => n + c.prompts.filter((p) => p.status === s).length,
+              0,
+            );
+            if (count === 0) return null;
+            const meta = STATUS_META[s];
+            return (
+              <button
+                key={s}
+                title={meta.desc}
+                onClick={() => setStatusFilter(statusFilter === s ? null : s)}
+                className={`text-[10px] font-mono font-bold px-2 py-1 border tracking-wider transition-all ${
+                  statusFilter === s ? meta.color : "border-neutral-500/20 text-neutral-500 hover:text-white"
+                }`}
+              >
+                {meta.label} &middot; {count}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Category Grid */}
-      <section className="mb-8">
+      <section className="mb-6">
         <OrangeLabel text="/ WHAT YOU CAN SAY" />
-        <h2 className="text-xl font-bold text-white mt-2 mb-6">
+        <h2 className="text-xl font-bold text-white mt-2 mb-4">
           Example prompts by category
         </h2>
 
@@ -534,9 +670,7 @@ export default function McpUsagePage() {
 
       {/* Prompts */}
       <div className="space-y-6">
-        {CATEGORIES.filter(
-          (cat) => activeCategory === null || activeCategory === cat.id,
-        ).map((cat) => (
+        {shownCategories.map((cat) => (
           <section key={cat.id}>
             <div className="flex items-center gap-3 mb-3">
               <div className="text-orange-500">
@@ -560,6 +694,14 @@ export default function McpUsagePage() {
             </div>
           </section>
         ))}
+
+        {shownCategories.length === 0 && (
+          <div className="p-8 text-center border border-neutral-500/10 bg-[#0D0D0D]">
+            <p className="text-neutral-500 font-mono text-sm">
+              No prompts match this filter.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Pro tip */}
@@ -572,9 +714,11 @@ export default function McpUsagePage() {
         <p className="text-orange-400 text-sm font-semibold mb-2">Pro tip</p>
         <p className="text-neutral-400 text-sm">
           You don&apos;t need to memorize tool names. Just talk naturally &mdash;
-          Claude figures out which tools to call. The more context you give
-          (&ldquo;I want to long BTC with tight risk management&rdquo;), the
-          better Claude&apos;s tool selection becomes.
+          Claude figures out which tools to call. Start with{" "}
+          <span className="text-green-400 font-mono font-bold">READY</span>{" "}
+          prompts (work instantly), then place a trade to unlock{" "}
+          <span className="text-cyan-400 font-mono font-bold">POSITIONS</span>{" "}
+          prompts.
         </p>
       </div>
 
