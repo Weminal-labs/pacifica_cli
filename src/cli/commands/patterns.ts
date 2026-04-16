@@ -10,6 +10,7 @@
 
 import { Command } from "commander";
 import { readFile, readdir, copyFile } from "node:fs/promises";
+import { readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { input, select, number as numberPrompt, confirm } from "@inquirer/prompts";
@@ -469,8 +470,12 @@ function findExamplesDir(): string | null {
   const here = dirname(fileURLToPath(import.meta.url));
   for (let dir = here, i = 0; i < 6; i++, dir = dirname(dir)) {
     const candidate = join(dir, "examples", "patterns");
-    // We'll verify existence at call time with readdir/readFile
-    return candidate;
+    try {
+      readdirSync(candidate);
+      return candidate;
+    } catch {
+      // not found, try parent
+    }
   }
   return null;
 }
