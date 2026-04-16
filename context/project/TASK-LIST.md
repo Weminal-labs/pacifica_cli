@@ -35,8 +35,8 @@ Post-refactor work: land the pattern primitive, sync context.
 | TN9 | `[x]` | Rewrite skills: pacifica-shared, pattern-confirmed-entry, funding-arb-single-venue; add author-pattern; purge dangling refs | |
 | TN10 | `[x]` | Rewrite `skills/INDEX.md` to v2 surface | |
 | TN11 | `[x]` | Rewrite OVERVIEW.md, SCOPE.md, ROADMAP.md for thesis | |
-| TN12 | `[ ]` | Pattern backtest (replay against historical candles) | Next sprint |
-| TN13 | `[ ]` | Per-pattern journal tagging | Next sprint |
+| TN12 | `[x]` | Pattern backtest (replay against historical candles) | Shipped 2026-04-16 |
+| TN13 | `[x]` | Per-pattern journal tagging | Shipped 2026-04-16 |
 | TN14 | `[ ]` | "Code your first pattern" screencast | Validation deliverable |
 | TN15 | `[-]` | Decision: keep or strip web surface in v1 | Blocked on founder call |
 
@@ -262,7 +262,7 @@ Tasks currently being worked on or up next.
 | # | Status | Task | Feature |
 |---|--------|------|---------|
 | T97 | `[x]` | Create feature spec m12-simulate-backtest.md | M12 |
-| T98 | `[~]` | Refactor: extract SimulateForm.tsx + _lib/simulate.ts + _lib/volatility.ts | M12 |
+| T98 | `[x]` | Refactor: extract SimulateForm.tsx + _lib/simulate.ts + _lib/volatility.ts | M12 |
 | T99 | `[ ]` | Build web/lib/pacifica-public.ts + auto-fetch funding/price into form | M12 |
 | T100 | `[ ]` | Build useCandles hook + PriceChart SVG (7d, liquidation + entry overlays) | M12 |
 | T101 | `[ ]` | Build VolatilityScenarios (±1σ/2σ/3σ from realised vol) | M12 |
@@ -364,6 +364,9 @@ Tasks currently being worked on or up next.
 | T73 | Update DECISIONS.md, ROADMAP.md, SCOPE.md | M11 | 2026-04-13 |
 | T74 | Add /arb Claude Code skill | M11 | 2026-04-13 |
 | T75 | Demo-path rehearsal (arb scan, intelligence patterns, funding, heatmap) | M11 | 2026-04-13 |
+| TN12 | Pattern backtest (replay against historical candles) | — | 2026-04-16 |
+| TN13 | Per-pattern journal tagging | — | 2026-04-16 |
+| T98 | Refactor: extract SimulateForm.tsx + _lib/simulate.ts + _lib/volatility.ts | M12 | 2026-04-16 |
 
 ---
 

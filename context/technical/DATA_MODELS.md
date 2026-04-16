@@ -194,6 +194,7 @@ interface JournalEntry {
   leverage: number;
   duration?: number;       // seconds, for position closes
   triggered_by: 'human' | 'agent' | 'smart_order' | 'webhook';
+  patternName?: string;    // optional: which pattern triggered or was in play
 }
 ```
 
@@ -337,6 +338,48 @@ interface MarketIntelligenceSnapshot {
   liquidityLeaders: LiquidityScan[];
   triggeredAlerts: AlertTriageResult[];
   nearAlerts: AlertTriageResult[];
+}
+```
+
+## Pattern Models (`src/core/patterns/`)
+
+```typescript
+interface PatternMetadata {
+  name: string;
+  author: string;
+  createdAt: string;      // ISO
+  description: string;
+  symbols: string[];      // which markets this pattern trades
+  winRate?: number;       // from backtest
+  tradeCount?: number;    // from backtest
+}
+
+interface PatternSummary {
+  patternName: string;
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  winRate: number;        // 0-1
+  avgWin: number;         // USD
+  avgLoss: number;        // USD
+  profitFactor: number;   // total_wins / total_losses
+  totalPnl: number;       // USD
+  period: string;         // "today", "week", "month", "all"
+}
+
+interface BacktestResult {
+  patternName: string;
+  symbol: string;
+  daysAnalyzed: number;
+  trades: number;
+  wins: number;
+  losses: number;
+  winRate: number;        // percent 0-100
+  maxDrawdown: number;    // percent
+  totalPnl: number;       // USD
+  avgWin: number;         // USD
+  avgLoss: number;        // USD
+  profitFactor: number;
 }
 ```
 

@@ -8,6 +8,18 @@ These are the tools the MCP server exposes. Each tool has a defined name, descri
 
 ### Read Tools (10 — no guardrails needed)
 
+### Pattern Tools (5 — no guardrails needed)
+
+| Tool | Input | Output |
+|------|-------|--------|
+| `pacifica_list_patterns` | `{}` | `PatternMetadata[]` — all authored patterns |
+| `pacifica_get_pattern` | `{ name: string }` | `PatternYaml` — full pattern definition |
+| `pacifica_run_pattern` | `{ name: string, symbol: string, simulate?: boolean }` | `PatternResult` — matched conditions and suggested action |
+| `pacifica_simulate_pattern` | `{ name: string, symbol: string, days?: number }` | `BacktestResult` — win-rate, max drawdown, trade count |
+| `pacifica_save_pattern` | `{ yaml: string }` | `{ success: boolean, path: string }` — saves to ~/.pacifica/patterns/ |
+
+### Read Tools (10 — no guardrails needed)
+
 | Tool | Input | Output |
 |------|-------|--------|
 | `pacifica_get_markets` | `{}` | `Market[]` — all markets with price, vol, OI, funding |
@@ -26,7 +38,7 @@ These are the tools the MCP server exposes. Each tool has a defined name, descri
 | `pacifica_funding_rates` | `{}` | Funding rates for all Pacifica markets with APR |
 | `pacifica_funding_history` | `{ symbol: string, limit?: number }` | Historical funding data |
 
-### Analytics Tools (5 — no guardrails needed)
+### Analytics Tools (6 — no guardrails needed)
 
 | Tool | Input | Output |
 |------|-------|--------|
@@ -35,6 +47,7 @@ These are the tools the MCP server exposes. Each tool has a defined name, descri
 | `pacifica_position_heatmap` | `{}` | ASCII heatmap + structured risk data |
 | `pacifica_risk_summary` | `{}` | `RiskSummary` — raw risk metrics JSON |
 | `pacifica_get_smart_orders` | `{ status?: string, symbol?: string }` | `SmartOrder[]` — active/all smart orders |
+| `pacifica_journal_pattern_stats` | `{ pattern?: string, period?: "today"\|"week"\|"month"\|"all" }` | `PatternSummary` — win-rate and stats per pattern |
 
 ### Intelligence Tools (5 — no guardrails needed)
 

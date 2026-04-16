@@ -21,12 +21,12 @@ The load-bearing v2 work. Turns the CLI into a pattern-programmable trading seat
 - 2 example patterns (`funding-carry-btc`, `trend-continuation-eth`)
 - 7 lean skills: pacifica-shared, author-pattern, pattern-confirmed-entry, funding-arb-single-venue, risk-check-before-trade, validate-before-live, journal-trade
 
-## Phase 2 — Pattern Library Depth (next)
+## Phase 2 — Pattern Library Depth (shipped 2026-04-16)
 
 Sharpen the primitive with real trader feedback.
 
-- Pattern backtest: replay against last 30 days of candles, not just current state.
-- Per-pattern journal tagging so a trader sees win-rate per pattern they've authored.
+- Pattern backtest: replay against last 30 days of candles, not just current state. ✓
+- Per-pattern journal tagging so a trader sees win-rate per pattern they've authored. ✓
 - More example patterns covering common setups (mean-reversion, breakout, range, whale-follow-as-pattern).
 - Pattern composition (`include:` other patterns) if feedback calls for it.
 
