@@ -86,8 +86,8 @@ market: BTC-USDC-PERP
 when:
   - axis: mark_price
     op: gt
-    value: 85000
-    label: "price breakout trigger"
+    value: 74500
+    label: "price breaks above $74.5k"
 entry:
   side: long
   size_usd: 1000
@@ -97,8 +97,8 @@ entry:
 exit:
   - axis: mark_price
     op: lt
-    value: 82000
-    label: "trend invalidation"
+    value: 72500
+    label: "trend invalidated"
 `;
 
 const RAW_YAMLS: Record<string, string> = {

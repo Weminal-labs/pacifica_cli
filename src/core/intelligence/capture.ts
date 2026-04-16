@@ -88,9 +88,13 @@ export async function captureIntelligence(
       sdk.getRecentTrades(symbol).catch(() => []),
     ]);
 
-    const market = markets.find(
-      (m) => m.symbol.toUpperCase() === symbol.toUpperCase(),
-    );
+    // Pacifica returns markets as short symbols ("ETH"), but we may have
+    // normalised to the full form ("ETH-USDC-PERP"). Match either.
+    const shortSymbol = symbol.replace(/-USDC-PERP$/, "").replace(/-PERP$/, "");
+    const market = markets.find((m) => {
+      const u = m.symbol.toUpperCase();
+      return u === symbol.toUpperCase() || u === shortSymbol.toUpperCase();
+    });
 
     if (!market) {
       console.warn(`[intelligence] market not found for symbol: ${symbol}`);

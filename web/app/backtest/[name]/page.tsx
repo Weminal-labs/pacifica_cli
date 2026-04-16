@@ -13,7 +13,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { OrangeLabel } from "../../../components/ui/OrangeLabel";
 import { getExamplePattern, listExamplePatternNames } from "../../../lib/example-patterns";
-import { getCandles, stripPerpSuffix } from "@pacifica/core/patterns/candles";
+import { getCandles, getBinanceCandles, stripPerpSuffix } from "@pacifica/core/patterns/candles";
 import { runBacktest, type BacktestResult } from "@pacifica/core/patterns/backtest";
 import { EquityCurve } from "./_components/EquityCurve";
 import { TradesTable } from "./_components/TradesTable";
@@ -66,7 +66,8 @@ export default async function BacktestPage({ params, searchParams }: PageProps) 
   }
 
   const base = stripPerpSuffix(targetMarket);
-  const candles = await getCandles(base, { days });
+  let candles = await getCandles(base, { days });
+  let usedBinanceFallback = false;
 
   let result: BacktestResult | null = null;
   let fetchError: string | null = null;
@@ -74,6 +75,21 @@ export default async function BacktestPage({ params, searchParams }: PageProps) 
     fetchError = `Couldn't fetch enough candle history for ${base} (got ${candles.length}). The Pacifica testnet + Binance public APIs both returned short data.`;
   } else {
     result = runBacktest(pattern, candles, `${base}-USDC-PERP`);
+
+    // If testnet data produced 0 trades, retry with real Binance prices.
+    // Testnet prices often don't reflect real markets, so the pattern's
+    // thresholds (e.g. mark_price > 85000) may never trigger.
+    if (result.trades.length === 0 && !result.all_conditions_skipped) {
+      const binanceCandles = await getBinanceCandles(base, { days });
+      if (binanceCandles.length >= 24) {
+        const binanceResult = runBacktest(pattern, binanceCandles, `${base}-USDC-PERP`);
+        if (binanceResult.trades.length > 0) {
+          result = binanceResult;
+          candles = binanceCandles;
+          usedBinanceFallback = true;
+        }
+      }
+    }
   }
 
   return (
@@ -97,6 +113,15 @@ export default async function BacktestPage({ params, searchParams }: PageProps) 
           {targetMarket} · last {days} days · 1h candles
         </p>
       </div>
+
+      {/* Binance fallback banner */}
+      {usedBinanceFallback && (
+        <div className="mb-6 border border-neutral-500/20 bg-neutral-500/5 p-4">
+          <p className="font-mono text-[11px] text-neutral-400">
+            Backtest ran against <span className="text-white">Binance spot prices</span> — Pacifica testnet prices produced 0 trades.
+          </p>
+        </div>
+      )}
 
       {/* Skipped-axes banner — LOUD */}
       {result && result.skipped_axes.length > 0 && (

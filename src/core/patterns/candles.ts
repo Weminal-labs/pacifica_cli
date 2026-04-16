@@ -130,3 +130,28 @@ export async function getCandles(
 
   return [];
 }
+
+/**
+ * Fetch candles from Binance only (real market prices).
+ * Used when the primary `getCandles` returns testnet data that doesn't
+ * reflect real-world prices — e.g. the web backtest page.
+ */
+export async function getBinanceCandles(
+  symbol: string,
+  opts: GetCandlesOptions = {},
+): Promise<Candle[]> {
+  const days = opts.days ?? 7;
+  const limit = Math.min(days * 24, 1000);
+  try {
+    const pair = toBinancePair(stripPerpSuffix(symbol));
+    const url = `${BINANCE_BASE}/api/v3/klines?symbol=${pair}&interval=1h&limit=${limit}`;
+    const res = await fetch(url, { signal: timeoutSignal(), cache: "no-store" });
+    if (res.ok) {
+      const raw = await res.json();
+      return normaliseBinance(raw);
+    }
+  } catch {
+    // failed
+  }
+  return [];
+}
