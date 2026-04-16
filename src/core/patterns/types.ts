@@ -59,6 +59,9 @@ export const PatternSchema = z.object({
   /** Specific market symbol (e.g. "BTC-USDC-PERP") or "ANY" to scan all. */
   market: z.string().default("ANY"),
 
+  /** Names of other patterns whose `when:` conditions are prepended to ours. */
+  include: z.array(z.string()).default([]),
+
   /** All `when` conditions must be true for the pattern to trigger (AND). */
   when: z.array(PatternConditionSchema).min(1),
 

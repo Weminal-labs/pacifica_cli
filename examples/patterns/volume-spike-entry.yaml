@@ -1,0 +1,32 @@
+# Pattern: volume-spike-entry
+# Market-agnostic — long any asset when 24h volume spikes with positive momentum.
+# Exit when volume dries up. Works across all scanned markets.
+
+name: volume-spike-entry
+description: Long on volume spike with momentum — scans all markets.
+tags: [volume, momentum, any]
+
+market: ANY
+
+when:
+  - axis: volume_24h_usd
+    op: gt
+    value: 100000000        # $100M 24h volume spike
+    label: "massive volume spike"
+  - axis: momentum_value
+    op: gt
+    value: 0.3
+    label: "momentum confirming direction"
+
+entry:
+  side: long
+  size_usd: 1000
+  leverage: 5
+  stop_loss_pct: 2.0
+  take_profit_pct: 4.0
+
+exit:
+  - axis: volume_24h_usd
+    op: lt
+    value: 50000000
+    label: "volume dried up — move is over"

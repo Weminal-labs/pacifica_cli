@@ -66,6 +66,48 @@ export async function loadPattern(name: string): Promise<Pattern | null> {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Include resolution — compose patterns by inheriting `when:` conditions
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a pattern's `include:` references against the full library.
+ * Included patterns' `when:` conditions are prepended (in order) to the
+ * pattern's own `when:` conditions. Resolution is flat — one level deep.
+ * Circular includes and missing references throw PatternParseError.
+ */
+export function resolveIncludes(
+  pattern: Pattern,
+  allPatterns: Pattern[],
+): Pattern {
+  if (pattern.include.length === 0) return pattern;
+
+  const byName = new Map(allPatterns.map((p) => [p.name, p]));
+
+  // Circular detection: if any included pattern also includes the current one
+  const includedConditions = pattern.include.flatMap((refName) => {
+    const ref = byName.get(refName);
+    if (!ref) {
+      throw new PatternParseError(
+        pattern.name,
+        `include references unknown pattern "${refName}"`,
+      );
+    }
+    if (ref.include.includes(pattern.name)) {
+      throw new PatternParseError(
+        pattern.name,
+        `circular include detected: "${pattern.name}" <-> "${refName}"`,
+      );
+    }
+    return ref.when;
+  });
+
+  return {
+    ...pattern,
+    when: [...includedConditions, ...pattern.when],
+  };
+}
+
 /** Write a pattern to disk as YAML. Used by Claude via MCP. */
 export async function savePattern(pattern: Pattern): Promise<string> {
   // Re-validate before writing so callers can't persist garbage.

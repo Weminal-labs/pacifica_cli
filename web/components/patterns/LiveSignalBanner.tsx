@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import type { Pattern } from "../../lib/types";
 
 function stripSym(asset: string): string {
@@ -18,36 +17,13 @@ function deriveSide(pattern: Pattern): "long" | "short" {
 }
 
 export function LiveSignalBanner({ initialSignals }: { initialSignals: Pattern[] }) {
-  const [signals, setSignals] = useState<Pattern[]>(initialSignals);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function refresh() {
-      try {
-        const res = await fetch("http://localhost:4242/api/intelligence/feed", {
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const data = (await res.json()) as { active_patterns?: Pattern[] };
-        if (!cancelled) setSignals(data.active_patterns ?? []);
-      } catch {
-        // keep existing state
-      }
-    }
-
-    const interval = setInterval(refresh, 60_000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, []);
+  const signals = initialSignals;
 
   if (signals.length === 0) {
     return (
       <div className="mb-6 p-4 bg-[#0F0F0F] border border-neutral-500/20">
         <p className="text-neutral-500 text-sm font-mono">
-          No live signals · Start intelligence server to see live patterns
+          No live signals · Install the CLI and connect Claude to see live patterns
         </p>
       </div>
     );
@@ -58,10 +34,10 @@ export function LiveSignalBanner({ initialSignals }: { initialSignals: Pattern[]
       <div className="flex items-center gap-2 mb-3">
         <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
         <span className="text-[11px] font-semibold tracking-[0.2em] uppercase text-orange-500">
-          / LIVE SIGNALS
+          / SHOWCASE SIGNALS
         </span>
         <span className="text-neutral-500 text-[11px] font-mono">
-          ({signals.length} active · auto-refresh 60s)
+          ({signals.length} example patterns)
         </span>
       </div>
       <div className="flex gap-3 overflow-x-auto pb-2">

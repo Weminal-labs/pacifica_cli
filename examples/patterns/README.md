@@ -59,3 +59,16 @@ exit:                          # any true (OR). Optional.
 | `mark_price` | current mark price |
 
 Operators: `lt`, `lte`, `gt`, `gte`, `eq`.
+
+## Example patterns
+
+| File | Description |
+|---|---|
+| `funding-carry-btc.yaml` | Long BTC when funding is deeply negative — collect the carry. |
+| `trend-continuation-eth.yaml` | Long ETH when momentum is bullish, buy-pressure high, whales active. |
+| `price-breakout-btc.yaml` | Demo — long BTC on price breakout above a level. |
+| `mean-reversion-eth.yaml` | Short ETH on overbought momentum — mean reversion play. |
+| `range-bound-sol.yaml` | Long SOL at range floor with volume confirmation. |
+| `volume-spike-entry.yaml` | Long on volume spike with momentum — scans all markets. |
+| `funding-flip-short.yaml` | Short BTC on spiking positive funding — longs are overleveraged. |
+| `whale-accumulation.yaml` | Long when whales are accumulating — follow the smart money. |

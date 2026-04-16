@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parsePattern } from "../loader.js";
+import { parsePattern, resolveIncludes, PatternParseError } from "../loader.js";
 import { matchWhen, shouldExit, evaluateCondition } from "../matcher.js";
 import type { MarketContext } from "../../intelligence/schema.js";
 
@@ -98,5 +98,198 @@ describe("shouldExit", () => {
     const bare = validYaml.replace(/exit:[\s\S]+/, "");
     const p = parsePattern(bare);
     expect(shouldExit(baseCtx, p)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveIncludes
+// ---------------------------------------------------------------------------
+
+const basePatternYaml = `
+name: base-pattern
+description: base
+when:
+  - axis: mark_price
+    op: gt
+    value: 70000
+entry:
+  side: long
+  size_usd: 1000
+  leverage: 3
+`;
+
+const secondBaseYaml = `
+name: second-base
+description: second
+when:
+  - axis: buy_pressure
+    op: gt
+    value: 0.6
+entry:
+  side: long
+  size_usd: 500
+  leverage: 2
+`;
+
+const composedYaml = `
+name: composed-pattern
+description: composed
+include:
+  - base-pattern
+when:
+  - axis: funding_rate
+    op: lt
+    value: 0
+entry:
+  side: long
+  size_usd: 500
+  leverage: 3
+`;
+
+const multiIncludeYaml = `
+name: multi-include
+description: multi
+include:
+  - base-pattern
+  - second-base
+when:
+  - axis: funding_rate
+    op: lt
+    value: 0
+entry:
+  side: long
+  size_usd: 500
+  leverage: 3
+`;
+
+describe("resolveIncludes", () => {
+  it("returns pattern unchanged when no includes", () => {
+    const p = parsePattern(validYaml);
+    const all = [p];
+    const resolved = resolveIncludes(p, all);
+    expect(resolved.when).toEqual(p.when);
+    expect(resolved).toBe(p); // same reference — no copy needed
+  });
+
+  it("prepends included pattern's when conditions", () => {
+    const base = parsePattern(basePatternYaml);
+    const composed = parsePattern(composedYaml);
+    const resolved = resolveIncludes(composed, [base, composed]);
+
+    // base has 1 condition (mark_price), composed has 1 (funding_rate)
+    expect(resolved.when).toHaveLength(2);
+    expect(resolved.when[0].axis).toBe("mark_price"); // from base
+    expect(resolved.when[1].axis).toBe("funding_rate"); // own
+  });
+
+  it("composes multiple includes correctly", () => {
+    const base = parsePattern(basePatternYaml);
+    const second = parsePattern(secondBaseYaml);
+    const multi = parsePattern(multiIncludeYaml);
+    const resolved = resolveIncludes(multi, [base, second, multi]);
+
+    // base(1) + second(1) + own(1) = 3
+    expect(resolved.when).toHaveLength(3);
+    expect(resolved.when[0].axis).toBe("mark_price");    // from base-pattern
+    expect(resolved.when[1].axis).toBe("buy_pressure");   // from second-base
+    expect(resolved.when[2].axis).toBe("funding_rate");   // own
+  });
+
+  it("throws PatternParseError for missing include", () => {
+    const composed = parsePattern(composedYaml);
+    expect(() => resolveIncludes(composed, [composed])).toThrow(PatternParseError);
+    expect(() => resolveIncludes(composed, [composed])).toThrow(/unknown pattern "base-pattern"/);
+  });
+
+  it("throws PatternParseError for circular include", () => {
+    // A includes B, B includes A
+    const aYaml = `
+name: pattern-a
+description: a
+include:
+  - pattern-b
+when:
+  - axis: funding_rate
+    op: lt
+    value: 0
+entry:
+  side: long
+  size_usd: 500
+  leverage: 3
+`;
+    const bYaml = `
+name: pattern-b
+description: b
+include:
+  - pattern-a
+when:
+  - axis: mark_price
+    op: gt
+    value: 70000
+entry:
+  side: long
+  size_usd: 500
+  leverage: 3
+`;
+    const a = parsePattern(aYaml);
+    const b = parsePattern(bYaml);
+    expect(() => resolveIncludes(a, [a, b])).toThrow(PatternParseError);
+    expect(() => resolveIncludes(a, [a, b])).toThrow(/circular include/);
+  });
+
+  it("resolution is flat — included pattern's includes are NOT recursively resolved", () => {
+    // grandparent -> parent -> child
+    // child includes parent, parent includes grandparent
+    // resolving child should only get parent's own conditions, not grandparent's
+    const grandparentYaml = `
+name: grandparent
+description: gp
+when:
+  - axis: volume_24h_usd
+    op: gt
+    value: 1000000000
+entry:
+  side: long
+  size_usd: 500
+  leverage: 2
+`;
+    const parentYaml = `
+name: parent
+description: p
+include:
+  - grandparent
+when:
+  - axis: mark_price
+    op: gt
+    value: 70000
+entry:
+  side: long
+  size_usd: 500
+  leverage: 3
+`;
+    const childYaml = `
+name: child
+description: c
+include:
+  - parent
+when:
+  - axis: funding_rate
+    op: lt
+    value: 0
+entry:
+  side: long
+  size_usd: 500
+  leverage: 3
+`;
+    const gp = parsePattern(grandparentYaml);
+    const parent = parsePattern(parentYaml);
+    const child = parsePattern(childYaml);
+    const resolved = resolveIncludes(child, [gp, parent, child]);
+
+    // Should only have parent's own when (mark_price) + child's own (funding_rate)
+    // NOT grandparent's volume_24h_usd
+    expect(resolved.when).toHaveLength(2);
+    expect(resolved.when[0].axis).toBe("mark_price");    // from parent (own)
+    expect(resolved.when[1].axis).toBe("funding_rate");   // child's own
   });
 });

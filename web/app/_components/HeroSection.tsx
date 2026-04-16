@@ -109,14 +109,14 @@ export function HeroSection() {
             </Link>
 
             <Link
-              href="/snapshot/ETH"
+              href="/simulate"
               className="relative hover:bg-orange-900/30 text-white px-3 py-1.5 text-sm font-medium border border-orange-900/30 transition-colors"
             >
               <span className="absolute top-0 left-0 h-2 w-2 border-t border-l border-orange-500" />
               <span className="absolute top-0 right-0 h-2 w-2 border-t border-r border-orange-500" />
               <span className="absolute bottom-0 left-0 h-2 w-2 border-b border-l border-orange-500" />
               <span className="absolute bottom-0 right-0 h-2 w-2 border-b border-r border-orange-500" />
-              Market Snapshot
+              Simulate a Trade
             </Link>
           </div>
 

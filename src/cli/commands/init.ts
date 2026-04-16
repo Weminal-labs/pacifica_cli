@@ -347,6 +347,20 @@ async function runWizard(options: { testnet?: boolean }): Promise<void> {
   console.log();
   console.log(theme.muted(`  Config saved to: ${configPath}`));
   console.log();
+  // -- Optional: create first pattern now -----------------------------------
+  const createNow = await confirm({
+    message: "Would you like to create your first pattern now?",
+    default: true,
+  });
+
+  if (createNow) {
+    const { runNewPatternWizard } = await import("./patterns.js");
+    await runNewPatternWizard();
+  } else {
+    console.log(theme.muted("You can create patterns anytime with `pacifica patterns new`"));
+    console.log();
+  }
+
   console.log("Next steps:");
   console.log(`  ${theme.label("pacifica patterns list")}          See your starter patterns`);
   console.log(`  ${theme.label("pacifica backtest price-breakout-btc")}  Run a 30-day replay`);
