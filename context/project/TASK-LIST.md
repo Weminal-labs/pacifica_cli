@@ -18,6 +18,34 @@ it always points to the same thing.
 
 ---
 
+## Active Sprint — v2 Lean-to-Thesis (2026-04-15)
+
+Post-refactor work: land the pattern primitive, sync context.
+
+| # | Status | Task | Notes |
+|---|--------|------|-------|
+| TN1 | `[x]` | Design Pattern YAML schema + zod types (`src/core/patterns/types.ts`) | |
+| TN2 | `[x]` | Pattern loader (`src/core/patterns/loader.ts`) — loadPatterns/loadPattern/savePattern/getPatternsDir | |
+| TN3 | `[x]` | Pattern matcher (`src/core/patterns/matcher.ts`) — evaluateCondition/matchWhen/shouldExit | |
+| TN4 | `[x]` | Unit tests for parser/matcher (9 passing) | `src/core/patterns/__tests__/patterns.test.ts` |
+| TN5 | `[x]` | 2 example patterns + README (`examples/patterns/`) | funding-carry-btc, trend-continuation-eth |
+| TN6 | `[x]` | `pacifica patterns` CLI (`src/cli/commands/patterns.ts`) | list/show/validate subcommands |
+| TN7 | `[x]` | Register simulate + patterns in `src/cli/index.ts` (regression fix) | simulate was missing |
+| TN8 | `[x]` | 5 MCP pattern tools (`src/mcp/pattern-tools.ts`) | list/get/run/simulate/save |
+| TN9 | `[x]` | Rewrite skills: pacifica-shared, pattern-confirmed-entry, funding-arb-single-venue; add author-pattern; purge dangling refs | |
+| TN10 | `[x]` | Rewrite `skills/INDEX.md` to v2 surface | |
+| TN11 | `[x]` | Rewrite OVERVIEW.md, SCOPE.md, ROADMAP.md for thesis | |
+| TN12 | `[ ]` | Pattern backtest (replay against historical candles) | Next sprint |
+| TN13 | `[ ]` | Per-pattern journal tagging | Next sprint |
+| TN14 | `[ ]` | "Code your first pattern" screencast | Validation deliverable |
+| TN15 | `[-]` | Decision: keep or strip web surface in v1 | Blocked on founder call |
+
+---
+
+## Archived — Pre-Refactor Sprints
+
+All tasks below pre-date the 2026-04-15 lean-to-thesis refactor. Status shown as of the checkpoint commit (55c7de0). Do not resume these — the feature area was cut.
+
 ## Active Sprint — Day 1
 
 Tasks currently being worked on or up next.

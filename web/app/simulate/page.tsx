@@ -1,18 +1,23 @@
 "use client";
 // ---------------------------------------------------------------------------
-// Pacifica Intelligence — Simulate + Backtest
-// Redesigned: auto-fetch funding, SVG price chart, volatility scenarios,
-// and optional pattern backtest panel when ?patternId= is present.
+// /simulate — PRE-TRADE risk calculator (forward-looking only)
+// ---------------------------------------------------------------------------
+// Mirror of the CLI `pacifica simulate <side> <market> <size>` command:
+//   - side / market / size / leverage / entry price
+//   - liquidation price
+//   - P&L grid at fixed exit pcts (-10/-5/-2/+2/+5/+10/+20%)
+//   - funding cost at the current 8h rate
+//
+// This page is NOT a backtest. For history replay see /backtest/[name]
+// (web showcase) or the CLI `pacifica backtest <name>`.
 // ---------------------------------------------------------------------------
 
-import { useState, useCallback, useEffect, Suspense, useMemo, useRef } from "react";
+import { useState, useEffect, Suspense, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { OrangeLabel } from "../../components/ui/OrangeLabel";
 import { PriceChart, type TF } from "./_components/PriceChart";
-import { VolatilityScenarios } from "./_components/VolatilityScenarios";
-import { PatternBacktestPanel } from "./_components/PatternBacktestPanel";
-import { useLiveMarket }        from "./_hooks/useLiveMarket";
+import { useLiveMarket } from "./_hooks/useLiveMarket";
 import { simulate, calcLiquidationPrice } from "./_lib/simulate";
 
 // ---------------------------------------------------------------------------
@@ -24,7 +29,10 @@ const KNOWN_MARKETS = [
   "AVAX", "DOGE", "PEPE", "ARB", "OP", "JUP", "TIA",
 ];
 const LEVERAGE_PRESETS = [2, 5, 10, 20, 50];
-const SIZE_PRESETS     = [100, 500, 1000, 5000];
+const SIZE_PRESETS = [100, 500, 1000, 5000];
+
+// Fixed exit scenarios — identical to the CLI simulate command.
+const SCENARIO_PCTS = [-10, -5, -2, 2, 5, 10, 20];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,39 +43,34 @@ function fmtPrice(n: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Inner form (needs useSearchParams — wrapped in Suspense below)
+// Inner form
 // ---------------------------------------------------------------------------
 
 function SimulateForm() {
   const searchParams = useSearchParams();
 
-  const paramSide      = searchParams.get("side");
-  const paramSymbol    = searchParams.get("symbol")?.toUpperCase();
-  const paramPrice     = searchParams.get("price");
-  const paramPatternId = searchParams.get("patternId");
+  const paramSide = searchParams.get("side");
+  const paramSymbol = searchParams.get("symbol")?.toUpperCase();
+  const paramPrice = searchParams.get("price");
 
-  const initialSide   = (paramSide === "short" ? "short" : "long") as "long" | "short";
+  const initialSide = (paramSide === "short" ? "short" : "long") as "long" | "short";
   const initialSymbol = paramSymbol && KNOWN_MARKETS.includes(paramSymbol)
     ? paramSymbol
     : (paramSymbol ?? "ETH");
 
-  const [side,         setSide]         = useState<"long" | "short">(initialSide);
-  const [symbol,       setSymbol]       = useState(initialSymbol);
+  const [side, setSide] = useState<"long" | "short">(initialSide);
+  const [symbol, setSymbol] = useState(initialSymbol);
   const [customSymbol, setCustomSymbol] = useState(
     paramSymbol && !KNOWN_MARKETS.includes(paramSymbol) ? paramSymbol : "",
   );
-  const [sizeUsd,      setSizeUsd]      = useState("1000");
-  const [leverage,     setLeverage]     = useState("5");
-  const [entryPrice,   setEntryPrice]   = useState(paramPrice ?? "");
-  const [manualFunding,setManualFunding]= useState("");
-  const [sigmaBand,    setSigmaBand]    = useState<number | null>(null);
-  const [chartTf,      setChartTf]      = useState<TF>("1D");
-  const [selectedScenario, setSelectedScenario] = useState<{
-    label: string; pct: number; pnl: number; exitPrice: number;
-  } | null>(null);
+  const [sizeUsd, setSizeUsd] = useState("1000");
+  const [leverage, setLeverage] = useState("5");
+  const [entryPrice, setEntryPrice] = useState(paramPrice ?? "");
+  const [manualFunding, setManualFunding] = useState("");
+  const [chartTf, setChartTf] = useState<TF>("1D");
   const resultsRef = useRef<HTMLDivElement>(null);
 
-  // Sync state when URL params change (Next.js keeps component mounted across navigations)
+  // Sync state with URL params across navigations
   useEffect(() => {
     if (paramSide === "short" || paramSide === "long") setSide(paramSide);
   }, [paramSide]);
@@ -79,86 +82,64 @@ function SimulateForm() {
     setCustomSymbol(inList ? "" : paramSymbol);
     setEntryPrice(paramPrice ?? "");
     setManualFunding("");
-    setSigmaBand(null);
-    setSelectedScenario(null);
   }, [paramSymbol, paramPrice]);
 
   const sym = (customSymbol.trim().toUpperCase() || symbol);
 
-  // Auto-fetch live market data (price + funding)
+  // Auto-fetch live market (price + funding)
   const live = useLiveMarket(sym);
 
-  // Auto-fill entry price from live data (re-fires whenever sym or live.price changes)
+  // Auto-fill entry price when live price arrives / sym changes
   useEffect(() => {
     if (live.price && live.price > 0) {
-      // Round to sensible decimal places based on price magnitude
       const dp = live.price >= 1000 ? 2 : live.price >= 1 ? 4 : 6;
       setEntryPrice(live.price.toFixed(dp));
     }
   }, [sym, live.price]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-fill funding from live data (don't overwrite if user typed something)
+  // Auto-fill funding (don't overwrite manual edits)
   useEffect(() => {
     if (live.funding != null && !manualFunding) {
-      // Convert to % per 8h for display
       setManualFunding(String((live.funding * 100).toFixed(4)));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live.funding]);
 
-  const epNum    = parseFloat(entryPrice);
-  const levNum   = parseFloat(leverage);
-  const sizeNum  = parseFloat(sizeUsd);
-  const fundNum  = parseFloat(manualFunding || "0") / 100; // back to decimal
+  const epNum = parseFloat(entryPrice);
+  const levNum = parseFloat(leverage);
+  const sizeNum = parseFloat(sizeUsd);
+  const fundNum = parseFloat(manualFunding || "0") / 100;
 
-  const isValid = !isNaN(epNum) && epNum > 0 && !isNaN(levNum) && levNum >= 1 && !isNaN(sizeNum) && sizeNum > 0;
+  const isValid =
+    !isNaN(epNum) && epNum > 0 &&
+    !isNaN(levNum) && levNum >= 1 &&
+    !isNaN(sizeNum) && sizeNum > 0;
 
   const liqPrice = useMemo(() => {
     if (!isValid) return null;
     return calcLiquidationPrice(side, epNum, levNum);
   }, [isValid, side, epNum, levNum]);
 
-  // Target price from pattern (set by PatternBacktestPanel via message —
-  // we pass entryPrice in and get the computed target back indirectly through
-  // the pattern's avg_pnl_pct rendered in the panel)
-  const [targetPrice] = useState<number | null>(null);
-
-  // Live-recomputed preview: keep the chosen σ-level locked but recompute exit
-  // price + pnl against current entryPrice/side/size/leverage so the banner
-  // and chart line track edits without the user having to re-click.
-  const livePreview = useMemo(() => {
-    if (!selectedScenario || !isValid) return null;
-    const exitPrice = epNum * (1 + selectedScenario.pct / 100);
-    const r = simulate(side, sym, sizeNum, levNum, epNum, fundNum, [selectedScenario.pct]);
-    const row = r.scenarios[0];
-    return {
-      label: selectedScenario.label,
-      pct:   selectedScenario.pct,
-      pnl:   row.pnl,
-      exitPrice,
-    };
-  }, [selectedScenario, isValid, epNum, side, sym, sizeNum, levNum, fundNum]);
-
-  // Funding card
-  const fundingCard = useMemo(() => {
+  const simResult = useMemo(() => {
     if (!isValid) return null;
-    const r = simulate(side, sym, sizeNum, levNum, epNum, fundNum);
-    return r.funding;
+    return simulate(side, sym, sizeNum, levNum, epNum, fundNum, SCENARIO_PCTS);
   }, [isValid, side, sym, sizeNum, levNum, epNum, fundNum]);
 
-  // Summary
   const marginRequired = isValid ? sizeNum / levNum : null;
-  const liqDistPct     = isValid ? (100 / levNum).toFixed(1) : null;
+  const liqDistPct = isValid ? (100 / levNum).toFixed(1) : null;
 
   return (
     <div className="px-6 py-12 pb-20">
-
       {/* Header */}
       <div className="mb-10">
-        <OrangeLabel text="/ TRADE SIMULATOR" />
+        <OrangeLabel text="/ PRE-TRADE CALCULATOR" />
         <h1 className="text-3xl font-bold text-white mt-2">Risk Simulator</h1>
         <p className="text-neutral-500 text-sm mt-1 font-mono">
-          Live price · realised vol scenarios · chart context · pattern backtest
+          Forward-looking math — liquidation, P&amp;L at fixed price moves, funding cost.
+          Not a backtest. For history replay see{" "}
+          <Link href="/backtest/funding-carry-btc" className="text-orange-400 hover:underline">
+            /backtest
+          </Link>.
         </p>
       </div>
 
@@ -265,7 +246,7 @@ function SimulateForm() {
             </div>
           </div>
 
-          {/* Entry Price — auto-filled, manually overridable */}
+          {/* Entry Price */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-[11px] font-mono text-neutral-500 uppercase tracking-wider">
@@ -293,12 +274,9 @@ function SimulateForm() {
               placeholder="Enter price manually or auto-fetches…"
               className="w-full bg-[#111111] border border-neutral-500/20 text-white text-sm px-3 py-2.5 font-mono placeholder:text-neutral-600 focus:outline-none focus:border-orange-500/50"
             />
-            <p className="text-[10px] font-mono text-neutral-700 mt-1">
-              Auto-filled from live market · edit freely · click ↺ to reset
-            </p>
           </div>
 
-          {/* Funding Rate — auto-filled */}
+          {/* Funding */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-[11px] font-mono text-neutral-500 uppercase tracking-wider">
@@ -316,38 +294,29 @@ function SimulateForm() {
               placeholder="0.01"
               className="w-full bg-[#111111] border border-neutral-500/20 text-white text-sm px-3 py-2.5 font-mono placeholder:text-neutral-600 focus:outline-none focus:border-orange-500/50"
             />
-            {live.funding == null && (
-              <p className="text-[10px] text-neutral-700 font-mono mt-1">
-                Check funding on the{" "}
-                <Link href={`/snapshot/${sym}`} className="text-orange-500 hover:underline">{sym} Snapshot page</Link>
-              </p>
-            )}
           </div>
 
-          {/* Simulate CTA */}
+          {/* CTA */}
           <div className="pt-2">
             <button
               type="button"
               disabled={!isValid}
-              onClick={() =>
-                resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-              }
+              onClick={() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
               className={`w-full py-3 font-mono text-sm font-bold tracking-wider text-center border transition-colors ${
                 isValid
                   ? "bg-orange-500 border-orange-500 text-black hover:bg-orange-400 cursor-pointer"
                   : "bg-transparent border-neutral-500/20 text-neutral-600 cursor-not-allowed"
               }`}
             >
-              {isValid ? "▶ View Simulation Results →" : "Enter size + leverage to simulate"}
+              {isValid ? "▶ View Simulation →" : "Enter size + leverage to simulate"}
             </button>
             {isValid && (
               <p className="text-[10px] font-mono text-neutral-600 text-center mt-1.5">
-                Results update live as you type · no submit needed
+                Results update live as you type
               </p>
             )}
           </div>
 
-          {/* Quick links */}
           <p className="text-[11px] text-neutral-700 font-mono text-center">
             <Link href="/simulate?side=long&symbol=BTC" className="text-orange-500/60 hover:text-orange-500">Long BTC</Link>
             {" · "}
@@ -357,18 +326,8 @@ function SimulateForm() {
           </p>
         </div>
 
-        {/* ── Right: Results stack ── */}
+        {/* ── Right: Results ── */}
         <div ref={resultsRef} className="space-y-4">
-
-          {/* Pattern Backtest Panel (only if patternId in URL) */}
-          {paramPatternId && (
-            <PatternBacktestPanel
-              patternId={paramPatternId}
-              symbol={sym}
-              side={side}
-              entryPrice={isValid ? epNum : null}
-            />
-          )}
 
           {/* Summary card */}
           {isValid && (
@@ -407,7 +366,6 @@ function SimulateForm() {
                 </div>
               </div>
 
-              {/* Liq distance */}
               <div className="mt-4 pt-4 border-t border-neutral-500/10">
                 <p className="text-[11px] font-mono text-neutral-500 uppercase tracking-wider mb-2">Distance to Liquidation</p>
                 <div className="flex items-center gap-3">
@@ -421,65 +379,74 @@ function SimulateForm() {
             </div>
           )}
 
-          {/* Price Chart */}
+          {/* Price chart (reference only — no σ band, no pattern overlays) */}
           <PriceChart
             symbol={sym}
             entryPrice={isValid ? epNum : null}
             liquidationPrice={isValid ? liqPrice : null}
-            targetPrice={targetPrice}
-            sigmaBand={sigmaBand}
-            scenarioPrice={livePreview?.exitPrice ?? null}
-            scenarioLabel={livePreview?.label ?? null}
+            targetPrice={null}
+            sigmaBand={null}
+            scenarioPrice={null}
+            scenarioLabel={null}
             tf={chartTf}
             onTfChange={setChartTf}
             onPickEntry={(p) => {
               const dp = p >= 1000 ? 2 : p >= 1 ? 4 : 6;
               setEntryPrice(p.toFixed(dp));
-              // livePreview tracks entry automatically — no need to clear
             }}
           />
 
-          {/* Scenario preview banner */}
-          {livePreview && (
-            <div className="relative bg-[#0A1410] border border-green-500/30 px-4 py-2.5 flex items-center justify-between">
-              <div className="flex items-center gap-3 font-mono text-[11px]">
-                <span className="text-green-500 font-bold tracking-wider">PREVIEW {livePreview.label}</span>
-                <span className="text-neutral-500">if price hits</span>
-                <span className="text-white font-semibold">{fmtPrice(livePreview.exitPrice)}</span>
-                <span className="text-neutral-500">→ P&amp;L</span>
-                <span className={`font-bold ${livePreview.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                  {livePreview.pnl >= 0 ? "+" : ""}${livePreview.pnl.toFixed(2)}
-                </span>
-                <span className="text-neutral-600">({livePreview.pct >= 0 ? "+" : ""}{livePreview.pct.toFixed(1)}% move)</span>
+          {/* P&L grid — fixed exit pcts, mirrors CLI */}
+          {isValid && simResult && (
+            <div className="relative bg-[#111111] border border-neutral-500/10 p-5">
+              <span className="absolute top-0 left-0 h-1.5 w-1.5 border-t border-l border-orange-500/50" />
+              <span className="absolute top-0 right-0 h-1.5 w-1.5 border-t border-r border-orange-500/50" />
+              <span className="absolute bottom-0 left-0 h-1.5 w-1.5 border-b border-l border-orange-500/50" />
+              <span className="absolute bottom-0 right-0 h-1.5 w-1.5 border-b border-r border-orange-500/50" />
+
+              <p className="text-sm font-semibold text-white mb-1">
+                If price moves, here&apos;s your P&amp;L
+              </p>
+              <p className="text-[11px] font-mono text-neutral-500 mb-4">
+                Forward-looking only. Same exit pcts as <code className="bg-neutral-800 px-1">pacifica simulate</code>.
+              </p>
+
+              <div className="grid grid-cols-[auto_1fr_auto_auto] gap-x-4 gap-y-1.5 px-1 text-[9px] font-mono text-neutral-700 uppercase tracking-wider border-b border-neutral-500/20 pb-1.5">
+                <span>Move</span>
+                <span>Exit price</span>
+                <span className="text-right">P&amp;L</span>
+                <span className="text-right">% margin</span>
               </div>
-              <button
-                onClick={() => setSelectedScenario(null)}
-                className="text-neutral-500 hover:text-white font-mono text-[11px] leading-none px-1"
-                aria-label="Clear preview"
-              >
-                ✕
-              </button>
+              <div className="mt-1 divide-y divide-neutral-500/10">
+                {simResult.scenarios.map((s) => {
+                  const exitPrice = epNum * (1 + s.pricePct / 100);
+                  const isProfit = s.pnl >= 0;
+                  return (
+                    <div
+                      key={s.label}
+                      className="grid grid-cols-[auto_1fr_auto_auto] gap-x-4 items-center px-1 py-1.5"
+                    >
+                      <span className="font-mono text-xs text-neutral-400">
+                        {s.label}
+                      </span>
+                      <span className="font-mono text-sm text-neutral-300">
+                        {fmtPrice(exitPrice)}
+                      </span>
+                      <span className={`font-mono text-sm font-semibold text-right ${isProfit ? "text-green-400" : "text-red-400"}`}>
+                        {isProfit ? "+" : ""}${s.pnl.toFixed(2)}
+                      </span>
+                      <span className={`font-mono text-xs text-right ${isProfit ? "text-green-700" : "text-red-700"}`}>
+                        {isProfit ? "+" : ""}{s.pnlPct.toFixed(0)}%
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
-          {/* Volatility Scenarios */}
-          {isValid && (
-            <VolatilityScenarios
-              symbol={sym}
-              side={side}
-              sizeUsd={sizeNum}
-              leverage={levNum}
-              entryPrice={epNum}
-              fundingRate={fundNum}
-              tf={chartTf}
-              onVolReady={(delta) => setSigmaBand(delta)}
-              selectedLabel={selectedScenario?.label ?? null}
-              onSelectScenario={setSelectedScenario}
-            />
-          )}
-
-          {/* Funding projections */}
-          {fundingCard && (
+          {/* Funding */}
+          {simResult && (
             <div className="relative bg-[#111111] border border-neutral-500/10 p-5">
               <span className="absolute top-0 left-0 h-1.5 w-1.5 border-t border-l border-orange-500/50" />
               <span className="absolute top-0 right-0 h-1.5 w-1.5 border-t border-r border-orange-500/50" />
@@ -489,7 +456,7 @@ function SimulateForm() {
                 Funding Cost (at current rate)
               </p>
               <div className="flex gap-6">
-                {fundingCard.map((f) => (
+                {simResult.funding.map((f) => (
                   <div key={f.label}>
                     <p className="text-[11px] font-mono text-neutral-600">{f.label}</p>
                     <p className={`font-mono text-sm font-semibold mt-0.5 ${f.cost >= 0 ? "text-red-400" : "text-green-400"}`}>
@@ -504,8 +471,8 @@ function SimulateForm() {
             </div>
           )}
 
-          {/* Empty state when no valid inputs yet */}
-          {!isValid && !paramPatternId && (
+          {/* Empty state */}
+          {!isValid && (
             <div className="h-full flex flex-col items-center justify-center border border-neutral-500/10 bg-[#111111] min-h-[200px] gap-3 p-8 text-center">
               <p className="text-neutral-500 font-mono text-sm">
                 {live.loading ? "Fetching live price…" : "Enter size and leverage to see results"}
@@ -521,15 +488,11 @@ function SimulateForm() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Page wrapper
-// ---------------------------------------------------------------------------
-
 export default function SimulatePage() {
   return (
     <Suspense fallback={
       <div className="px-6 py-12">
-        <OrangeLabel text="/ TRADE SIMULATOR" />
+        <OrangeLabel text="/ PRE-TRADE CALCULATOR" />
         <h1 className="text-3xl font-bold text-white mt-2">Risk Simulator</h1>
         <p className="text-neutral-600 font-mono text-sm mt-4">Loading…</p>
       </div>

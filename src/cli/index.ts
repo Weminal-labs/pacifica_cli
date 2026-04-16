@@ -43,13 +43,10 @@ program
   .option("-j, --json", "Machine-readable JSON output (for AI agents)");
 
 // ---------------------------------------------------------------------------
-// Subcommands – real implementations
+// Subcommands – lean v1 surface (thesis: CLI + MCP + pattern primitive)
 // ---------------------------------------------------------------------------
 
 async function registerCommands(): Promise<void> {
-  // Lazy-import so the CLI boots fast; command modules are only loaded when
-  // the user actually invokes them.
-
   const initCmd = new Command("init")
     .description("Initialize Pacifica CLI configuration")
     .action(async () => {
@@ -67,10 +64,6 @@ async function registerCommands(): Promise<void> {
       await scanCommand({ ...program.opts(), ...scanCmd.opts() });
     });
 
-  // ---------------------------------------------------------------------------
-  // Subcommands – lazy-loaded implementations
-  // ---------------------------------------------------------------------------
-
   const { createTradeCommand } = await import("./commands/trade.js");
   const tradeCmd = createTradeCommand();
 
@@ -79,9 +72,6 @@ async function registerCommands(): Promise<void> {
 
   const { createPositionsCommand } = await import("./commands/positions.js");
   const positionsCmd = createPositionsCommand();
-
-  const { createHeatmapCommand } = await import("./commands/heatmap.js");
-  const heatmapCmd = createHeatmapCommand();
 
   const { createAgentCommand } = await import("./commands/agent.js");
   const agentCmd = createAgentCommand();
@@ -92,63 +82,26 @@ async function registerCommands(): Promise<void> {
   const { createFundingCommand } = await import("./commands/funding.js");
   const fundingCmd = createFundingCommand();
 
-  const { createSmartCommand } = await import("./commands/smart.js");
-  const smartCmd = createSmartCommand();
-
-  const { createAlertsCommand } = await import("./commands/alerts.js");
-  const alertsCmd = createAlertsCommand();
-
-  const { createArbCommand } = await import("./commands/arb.js");
-  const arbCmd = createArbCommand();
-
-  const { createIntelligenceCommand } = await import("./commands/intelligence.js");
-  const intelligenceCmd = createIntelligenceCommand();
-
   const { createSimulateCommand } = await import("./commands/simulate.js");
   const simulateCmd = createSimulateCommand();
 
-  const { createLeaderboardCommand } = await import("./commands/leaderboard.js");
-  const leaderboardCmd = createLeaderboardCommand();
+  const { createPatternsCommand } = await import("./commands/patterns.js");
+  const patternsCmd = createPatternsCommand();
 
-  const { createWatchCommand } = await import("./commands/watch.js");
-  const watchCmd = createWatchCommand();
-
-  const { createCopyCommand } = await import("./commands/copy.js");
-  const copyCmd = createCopyCommand();
-
-  const { createPaperCommand } = await import("./commands/paper.js");
-  const paperCmd = createPaperCommand();
-
-  const { createStreamCommand } = await import("./commands/stream.js");
-  const streamCmd = createStreamCommand();
-
-  const { createAuditCommand } = await import("./commands/audit.js");
-  const auditCmd = createAuditCommand();
-
-  const { createIntentCommand } = await import("./commands/intent.js");
-  const intentCmd = createIntentCommand();
+  const { createBacktestCommand } = await import("./commands/backtest.js");
+  const backtestCmd = createBacktestCommand();
 
   program.addCommand(initCmd);
   program.addCommand(scanCmd);
-  program.addCommand(arbCmd);
   program.addCommand(tradeCmd);
   program.addCommand(ordersCmd);
   program.addCommand(positionsCmd);
-  program.addCommand(heatmapCmd);
   program.addCommand(agentCmd);
   program.addCommand(journalCmd);
   program.addCommand(fundingCmd);
-  program.addCommand(smartCmd);
-  program.addCommand(alertsCmd);
-  program.addCommand(intelligenceCmd);
   program.addCommand(simulateCmd);
-  program.addCommand(leaderboardCmd);
-  program.addCommand(watchCmd);
-  program.addCommand(copyCmd);
-  program.addCommand(paperCmd);
-  program.addCommand(streamCmd);
-  program.addCommand(auditCmd);
-  program.addCommand(intentCmd);
+  program.addCommand(patternsCmd);
+  program.addCommand(backtestCmd);
 }
 
 // ---------------------------------------------------------------------------
@@ -161,7 +114,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  // Print a clean, user-friendly error — never a raw stack trace.
   const message =
     err instanceof Error ? err.message : String(err);
   console.error(`\nError: ${message}\n`);

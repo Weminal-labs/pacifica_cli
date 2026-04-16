@@ -324,6 +324,12 @@ async function runWizard(options: { testnet?: boolean }): Promise<void> {
     ? `Enabled (limit: ${formatDollar(dailySpendingLimit)}/day)`
     : "Disabled";
 
+  // Seed example patterns into ~/.pacifica/patterns/ (idempotent, only writes
+  // files that don't already exist). Gives every new trader a working starter
+  // library to backtest and modify.
+  const { seedExamplePatterns } = await import("../../core/patterns/seed.js");
+  const seeded = await seedExamplePatterns().catch(() => ({ copied: [], skipped: [], examplesDir: null }));
+
   console.log(theme.success("Setup Complete!"));
   console.log(theme.success("==============="));
   console.log(`  Network:    ${network === "testnet" ? "Testnet" : "Mainnet"}`);
@@ -333,13 +339,18 @@ async function runWizard(options: { testnet?: boolean }): Promise<void> {
   if (builderCode) {
     console.log(`  Builder:    ${builderCode}`);
   }
+  if (seeded.copied.length > 0) {
+    console.log(`  Patterns:   ${seeded.copied.length} starter pattern(s) installed`);
+  } else if (seeded.skipped.length > 0) {
+    console.log(`  Patterns:   ${seeded.skipped.length} existing (kept your edits)`);
+  }
   console.log();
   console.log(theme.muted(`  Config saved to: ${configPath}`));
   console.log();
   console.log("Next steps:");
-  console.log(`  ${theme.label("pacifica scan")}          Live market overview`);
-  console.log(`  ${theme.label("pacifica trade --help")}  Place your first trade`);
-  console.log(`  ${theme.label("pacifica agent status")}  Check agent guardrails`);
+  console.log(`  ${theme.label("pacifica patterns list")}          See your starter patterns`);
+  console.log(`  ${theme.label("pacifica backtest price-breakout-btc")}  Run a 30-day replay`);
+  console.log(`  ${theme.label("pacifica --mcp")}                   Start MCP server for Claude`);
   console.log();
 }
 

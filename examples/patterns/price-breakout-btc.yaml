@@ -1,0 +1,28 @@
+# Pattern: price-breakout-btc
+# Demo-only pattern with price-only conditions — useful for end-to-end
+# backtest demos, since all axes are derivable from candles alone.
+
+name: price-breakout-btc
+description: Demo — long BTC on price breakout above a level.
+tags: [price, breakout, demo]
+
+market: BTC-USDC-PERP
+
+when:
+  - axis: mark_price
+    op: gt
+    value: 74500
+    label: "price breaks above $74.5k"
+
+entry:
+  side: long
+  size_usd: 1000
+  leverage: 5
+  stop_loss_pct: 2.0
+  take_profit_pct: 3.0
+
+exit:
+  - axis: mark_price
+    op: lt
+    value: 72500
+    label: "trend invalidated"

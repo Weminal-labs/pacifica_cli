@@ -1,0 +1,35 @@
+# Pattern: trend-continuation-eth
+# Ride ETH momentum when whales are buying into a trend.
+
+name: trend-continuation-eth
+description: Long ETH when momentum is bullish, buy-pressure high, whales active.
+tags: [momentum, trend, eth]
+
+market: ETH-USDC-PERP
+
+when:
+  - axis: momentum_value
+    op: gt
+    value: 0.4
+    label: "strong bullish momentum"
+  - axis: buy_pressure
+    op: gt
+    value: 0.65
+    label: "aggressive buying"
+  - axis: large_orders_count
+    op: gte
+    value: 3
+    label: "at least 3 whale orders this window"
+
+entry:
+  side: long
+  size_usd: 750
+  leverage: 2
+  stop_loss_pct: 2.5
+  take_profit_pct: 4.0
+
+exit:
+  - axis: momentum_value
+    op: lt
+    value: 0
+    label: "momentum flipped bearish"

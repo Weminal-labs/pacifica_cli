@@ -7,8 +7,6 @@
 
 import { randomUUID } from "node:crypto";
 import { loadRecords, savePatterns } from "./store.js";
-import { loadReputation, saveReputation } from "./store.js";
-import { computeReputation } from "./reputation.js";
 import { analyzeTradePatterns } from "./patterns.js";
 import type { PacificaClient } from "../sdk/client.js";
 import type {
@@ -439,21 +437,3 @@ export async function scanForActiveSignals(
   );
 }
 
-// ---------------------------------------------------------------------------
-// Engine entry point
-// ---------------------------------------------------------------------------
-
-/**
- * Load all records, detect patterns, compute reputation, persist both, and
- * return the detected patterns.
- */
-export async function runPatternEngine(): Promise<DetectedPattern[]> {
-  const records = await loadRecords();
-  const patterns = detectPatterns(records);
-  await savePatterns(patterns);
-
-  const rep = computeReputation(records);
-  await saveReputation(rep);
-
-  return patterns;
-}

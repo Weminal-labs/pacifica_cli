@@ -1,11 +1,11 @@
 ---
 name: pacifica-pattern-confirmed-entry
-version: 1.0.0
-description: Enter a position only when the intelligence engine confirms an active pattern signal
-category: intelligence
+version: 2.0.0
+description: Enter a trade only when a user-authored pattern's `when:` conditions match live market state
+category: patterns
 requires:
-  commands: [intelligence, simulate, trade]
-  skills: [pacifica-shared, simulate-first, snapshot-before-trade]
+  mcp_tools: [pacifica_list_patterns, pacifica_run_pattern, pacifica_simulate_pattern, pacifica_get_positions, pacifica_place_order]
+  skills: [pacifica-shared, validate-before-live]
   auth_required: true
   dangerous: true
 ---
@@ -13,98 +13,39 @@ requires:
 # Pattern-Confirmed Entry
 
 ## Purpose
-Use the Pacifica intelligence engine to identify markets where a verified pattern is
-currently active, then enter a position only if the signal meets confidence requirements.
-This is the recommended entry method for any non-trivial position because it ties your
-entry decision to historical win-rate evidence.
+
+Use a pattern the trader has authored in `~/.pacifica/patterns/` as the gate on entry. Only enter when that pattern's `when:` block matches the current live market.
+
+This is the core workflow the whole CLI+MCP+pattern thesis is built around. It ties every trade back to a rule the trader wrote down, so the rationale is reproducible and improvable.
 
 ## Steps
 
-1. Run the pattern engine to detect active signals on live markets.
-2. Parse the output and identify the strongest signal (highest win rate with full pattern match).
-3. Reject any signal with `win_rate` below 0.60 or `fullMatch: false` unless you have a
-   specific reason to proceed.
-4. Check your current positions to avoid doubling an existing exposure.
-5. Simulate the proposed trade to confirm liquidation price and P&L scenarios.
-6. Validate the order without submitting it.
-7. Submit the live order.
-8. Journal the trade immediately after.
+1. **List patterns** the trader has authored — `pacifica_list_patterns`.
+2. **Pick one** based on the trader's intent (e.g. "they asked about funding" → look for patterns tagged `funding`).
+3. **Run it** against the live market — `pacifica_run_pattern` with the pattern name.
+4. **Reject** if `matched: false`. Tell the trader which conditions failed and what the actual values are.
+5. **Check positions** — `pacifica_get_positions` — avoid stacking an existing exposure.
+6. **Simulate** — `pacifica_simulate_pattern` — confirm liquidation distance and P&L at TP/SL.
+7. **Place the order** using the pattern's `entry` block — `pacifica_place_order` with `side`, `size_usd`, `leverage`, `stop_loss_pct`, `take_profit_pct`.
+8. **Journal** — `pacifica_trade_journal` with a note referencing the pattern name.
 
-## Commands
+## Example Dialogue
 
-```bash
-# Step 1: Run the pattern engine and scan live markets
-pacifica intelligence run --json
+> Trader: "Can we enter the funding carry play on BTC?"
 
-# Expected output shape:
-# {
-#   "patterns": [...],
-#   "signals": [
-#     {
-#       "asset": "ETH-USDC-PERP",
-#       "direction": "long",
-#       "pattern": { "name": "...", "win_rate": 0.72, "sample_size": 47 },
-#       "fullMatch": true,
-#       "fundingRate": 0.0003
-#     }
-#   ]
-# }
+1. `pacifica_run_pattern({ name: "funding-carry-btc" })` → `{ matched: true, conditions: [{axis: "funding_rate", required: -0.0003, actual: -0.00041, passed: true}, ...] }`
+2. `pacifica_simulate_pattern({ name: "funding-carry-btc" })` → liquidation 4% away, funding paying $0.20/hr.
+3. `pacifica_place_order({ symbol: "BTC-USDC-PERP", side: "buy", size_usd: 500, leverage: 3, stop_loss_pct: 2.0 })`
+4. Report: "Entered `funding-carry-btc` on BTC at $65,120. Liq at $63,180. Paying you $0.20/hr until funding flips."
 
-# Step 2: Check current positions before entering
-pacifica positions --json
+## Rejection Criteria
 
-# Step 3: Simulate the trade
-# Replace values with those from the chosen signal
-pacifica simulate long ETH-USDC-PERP 500 --leverage 5 --json
-
-# Step 4: Validate order without submitting
-pacifica trade buy ETH-USDC-PERP 500 --leverage 5 --validate --json
-
-# Step 5: Submit the live order
-pacifica trade buy ETH-USDC-PERP 500 --leverage 5 --sl 2900 --json
-
-# Step 6: Confirm the order landed
-pacifica orders --json
-
-# Step 7: Journal the session
-pacifica journal --limit 1 --json
-```
-
-## Parameters
-
-- `--leverage <n>`: Leverage multiplier for the entry. Match or stay below what the
-  simulation showed as safe given your stop-loss distance.
-- `--sl <price>`: Stop-loss price. Mandatory for pattern entries. Set it just below
-  the pattern's invalidation level.
-- `--tp <price>`: Take-profit price. Optional but recommended when the pattern has a
-  defined target.
-- `--validate`: Dry-run that checks margin and order constraints without submitting.
-  Always use this before the live call.
-
-## Signal Quality Criteria
-
-Only proceed with entry if all of the following are true:
-
-| Criterion | Minimum value |
-|---|---|
-| `win_rate` | >= 0.60 (60%) |
-| `sample_size` | >= 20 trades |
-| `fullMatch` | true |
-| Funding alignment | Rate favours your direction or is near zero |
-
-## Risks
-
-- **Pattern lag**: The intelligence engine runs on historical data loaded at startup.
-  Market conditions may have changed since the signal was generated.
-- **Overfit patterns**: Small sample sizes (< 20) produce unreliable win rates.
-  Always check `sample_size` before acting.
-- **Signal timing**: A signal does not mean "enter now". It means conditions historically
-  matching this pattern have been profitable. Your entry timing still matters.
+Do not enter if:
+- `matched: false` — some condition failed. Explain which one.
+- Existing position same side, same market — stack risk, refuse without explicit trader confirmation.
+- Liquidation distance < 2× stop-loss distance — too tight.
 
 ## Notes
 
-- Verified patterns are stored locally. Run `pacifica intelligence seed` in dev
-  environments to populate the store. In production, patterns accumulate from live trades.
-- The strongest signal is listed first in the `signals` array when `--json` is used.
-- Combine with `journal-trade` skill after every entry to build your personal intelligence
-  record for future pattern refinement.
+- If the trader says "improve this pattern," use `pacifica_get_pattern` → discuss → `pacifica_save_pattern` with the revised YAML.
+- The pattern file is the source of truth. Never enter on an ad-hoc rule when a pattern exists that covers the same setup.

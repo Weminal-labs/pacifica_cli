@@ -1,87 +1,40 @@
 ---
 name: pacifica-funding-arb-single-venue
-version: 1.0.0
-description: Run the Pacifica funding arbitrage bot to collect extreme funding rates
-category: funding
+version: 2.0.0
+description: Open a funding-carry position on Pacifica using the funding-carry pattern
+category: patterns
 requires:
-  commands: [arb, funding]
-  skills: [pacifica-shared]
+  mcp_tools: [pacifica_funding_rates, pacifica_get_pattern, pacifica_run_pattern, pacifica_simulate_pattern, pacifica_place_order]
+  skills: [pacifica-shared, pattern-confirmed-entry]
   auth_required: true
   dangerous: true
 ---
 
-# Funding Arb — Single Venue
+# Funding Carry — Single Venue
 
 ## Purpose
-Use the Pacifica arb bot to identify markets where the current funding rate is large
-enough to profit from holding the paying side against a hedged spot position, or from
-pure directional funding collection when the rate is extreme. This skill operates on
-Pacifica only and does not require a cross-venue hedge.
 
-The arb bot manages its own positions and rebalances automatically. This skill covers
-scanning for opportunities, starting the bot, and monitoring it safely.
+Hold the paying side of an extreme funding rate on Pacifica and collect funding until the rate reverts. This is a directional bet: you are not hedged cross-venue, so the price can move against you faster than funding pays.
+
+In v2 this is expressed as a **pattern** (`funding-carry-btc`, `funding-carry-eth`, etc.) — not an autonomous bot. The trader runs it when they want exposure; stops it by closing the position.
 
 ## Steps
 
-1. Scan funding rates to confirm at least one market has a rate large enough to be
-   worth arbing. The bot's default minimum threshold is 0.05% per 8h (roughly 55% APR).
-2. Review the arb config to confirm position limits are set appropriately for your
-   available margin.
-3. Start the arb bot.
-4. Check status after 5 minutes to confirm it has entered at least one position.
-5. Monitor periodically. Stop the bot before the next funding settlement if P&L
-   has turned negative.
-
-## Commands
-
-```bash
-# Step 1: Check funding rates and confirm a candidate exists
-pacifica funding --json
-
-# Step 2: Review current arb bot configuration
-pacifica arb config --json
-
-# Step 3: Do a one-shot scan to preview what the bot would target
-pacifica arb scan --json
-
-# Step 4: Start the arb bot daemon
-pacifica arb start
-
-# Step 5: Check bot status
-pacifica arb status --json
-
-# Step 6: View position history
-pacifica arb list --json
-
-# Step 7: Stop the bot
-pacifica arb stop
-```
-
-## Parameters
-
-- Arb config is managed via `pacifica arb config`. Key fields:
-  - `minFundingRate`: Minimum absolute rate to enter a position (default 0.0005).
-  - `maxPositionUsd`: Maximum USD notional per position.
-  - `maxTotalExposureUsd`: Total arb exposure cap across all positions.
-- The bot runs as a foreground daemon until stopped with `pacifica arb stop` or Ctrl+C.
+1. **Check the funding landscape** — `pacifica_funding_rates` — find markets with rates > ~0.05% per 8h (roughly 55% APR).
+2. **Match to a pattern** — `pacifica_list_patterns` with tag filter `funding`. If the trader has no funding pattern, hand off to the `author-pattern` skill to create one.
+3. **Evaluate** — `pacifica_run_pattern({ name: "funding-carry-btc" })`. If `matched: false`, report which condition failed and stop.
+4. **Simulate** — `pacifica_simulate_pattern` — check liquidation distance and estimated funding P&L over the next 8h.
+5. **Place the order** — `pacifica_place_order` with the pattern's entry config. Use `stop_loss_pct` from the pattern — never skip it.
+6. **Monitor** — check `pacifica_get_positions` periodically. Exit when the pattern's `exit:` condition fires (e.g. funding flipped positive).
 
 ## Risks
 
-- **Single-venue risk**: Without a cross-venue hedge, you carry directional exposure.
-  A large adverse price move can exceed the funding collected.
-- **Rate reversal**: Funding rates can reverse between the time you enter and the next
-  settlement. The bot monitors this but cannot guarantee the rate holds.
-- **Liquidity**: If the bot cannot close positions at acceptable slippage, it will log
-  an error but the position remains open. Check `pacifica arb status` and manually
-  close via `pacifica arb close <id>` if needed.
-- **Daemon crash**: If the process is killed unexpectedly, positions opened by the bot
-  remain live. Run `pacifica positions --json` to review the state.
+- **Single-venue directional risk.** Without a cross-venue hedge, a 2% adverse price move dwarfs a day of funding collection.
+- **Rate reversal.** Funding rates can reverse inside the 8h window. Monitor with `pacifica_funding_rates` every hour.
+- **Liquidation.** The pattern's `stop_loss_pct` must fire before the liquidation price. Simulate first to verify.
 
 ## Notes
 
-- Run `pacifica arb list --json` after stopping to capture the session P&L for journaling.
-- The bot writes a PID file to `~/.pacifica/arb.pid`. A stale PID file from a crashed
-  session may prevent restart. Delete it manually if `pacifica arb start` reports the
-  bot is already running when it is not.
-- Best results on markets with sustained extreme rates (>0.1% per 8h). Marginal rates
-  produce marginal returns that may not cover trading fees.
+- Good pattern candidates: rates > 0.1%/8h with rising OI (counterparty buying in, so the rate has room to persist).
+- Bad candidates: extreme rates on thin-OI markets — high rate, low depth, will not fill at size.
+- Always journal with a reference to which pattern was used — this builds the trader's personal track record per pattern.

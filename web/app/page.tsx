@@ -8,11 +8,10 @@ export const runtime = "edge";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Separator } from "./_components/Separator";
-import { SocialSignalsPanel } from "../components/feed/SocialSignalsPanel";
 import { OrangeLabel } from "../components/ui/OrangeLabel";
 import { PatternCard } from "../components/ui/PatternCard";
 import { SEED_PATTERNS } from "../lib/seed-patterns";
-import type { Pattern, WhaleActivity, HighRepSignal, SocialData } from "../lib/types";
+import type { Pattern, WhaleActivity, HighRepSignal } from "../lib/types";
 
 // Three.js hero — loaded client-side only to keep edge/server bundle clean
 const HeroSection = dynamic(
@@ -183,25 +182,6 @@ async function getFeedData(): Promise<{
   }
 }
 
-async function getSocialData(): Promise<Record<string, SocialData>> {
-  try {
-    const tickers = ["ETH", "BTC", "SOL"];
-    const results = await Promise.all(
-      tickers.map(async (t) => {
-        const res = await fetch(`http://localhost:4242/api/intelligence/social/${t}`, {
-          cache: "no-store",
-        });
-        if (!res.ok) return null;
-        const data = await res.json() as SocialData;
-        return [t, data] as const;
-      }),
-    );
-    return Object.fromEntries(results.filter((r): r is [string, SocialData] => r !== null));
-  } catch {
-    return {};
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Formatters
 // ---------------------------------------------------------------------------
@@ -222,7 +202,7 @@ function formatUsd(n: number): string {
 // ---------------------------------------------------------------------------
 
 export default async function FeedPage() {
-  const [data, socialData] = await Promise.all([getFeedData(), getSocialData()]);
+  const data = await getFeedData();
   const patterns: Pattern[]       = data.active_patterns  ?? [];
   const whales:   WhaleActivity[] = data.whale_activity   ?? [];
   const signals:  HighRepSignal[] = data.high_rep_signals ?? [];
@@ -237,27 +217,23 @@ export default async function FeedPage() {
       {/* ── Diagonal separator ── */}
       <Separator />
 
-      {/* ── Pattern stats bar ── */}
+      {/* ── How it works ── */}
       <div className="border-b border-neutral-500/20">
-        <div className="flex items-center justify-center gap-12 text-sm py-5 px-6">
-          <div className="text-center">
-            <p className="text-2xl font-bold text-white">{patterns.length}</p>
-            <p className="text-neutral-500 text-xs mt-0.5 font-mono">Verified Patterns</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-0 py-6 px-6">
+          <div className="text-center px-4 py-2 md:border-r border-neutral-500/20">
+            <p className="text-orange-500 font-mono text-xs mb-1">1 / WRITE</p>
+            <p className="text-white text-sm font-semibold">Code your rule as YAML</p>
+            <p className="text-neutral-500 text-xs mt-1 font-mono">Claude drafts it for you</p>
           </div>
-          <div className="w-px h-8 bg-neutral-500/20" />
-          <div className="text-center">
-            <p className="text-2xl font-bold text-white">80+</p>
-            <p className="text-neutral-500 text-xs mt-0.5 font-mono">Intelligence Records</p>
+          <div className="text-center px-4 py-2 md:border-r border-neutral-500/20">
+            <p className="text-orange-500 font-mono text-xs mb-1">2 / TEST</p>
+            <p className="text-white text-sm font-semibold">Backtest against 30 days</p>
+            <p className="text-neutral-500 text-xs mt-1 font-mono">See if it would&apos;ve worked</p>
           </div>
-          <div className="w-px h-8 bg-neutral-500/20" />
-          <div className="text-center">
-            <p className="text-2xl font-bold text-orange-500">72.3%</p>
-            <p className="text-neutral-500 text-xs mt-0.5 font-mono">Top Pattern Win Rate</p>
-          </div>
-          <div className="w-px h-8 bg-neutral-500/20" />
-          <div className="text-center">
-            <p className="text-2xl font-bold text-white">5</p>
-            <p className="text-neutral-500 text-xs mt-0.5 font-mono">Tracked Traders</p>
+          <div className="text-center px-4 py-2">
+            <p className="text-orange-500 font-mono text-xs mb-1">3 / RUN</p>
+            <p className="text-white text-sm font-semibold">Claude runs it via MCP</p>
+            <p className="text-neutral-500 text-xs mt-1 font-mono">Entry when conditions match</p>
           </div>
         </div>
       </div>
@@ -274,11 +250,11 @@ export default async function FeedPage() {
           </Link>
         </div>
         {!isLive && patterns.length > 0 && (
-          <div className="mb-4 text-[11px] font-mono text-neutral-500 flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-orange-500/50" />
-            Showing pattern library · run
-            <code className="text-orange-500">pacifica intelligence serve</code>
-            locally to see live-triggering patterns from your feed
+          <div className="mb-4 text-[11px] font-mono text-neutral-500 flex items-center gap-2 flex-wrap">
+            <span className="w-1.5 h-1.5 rounded-full bg-orange-500/50 shrink-0" />
+            Showcase patterns · to run your own, install the CLI and connect Claude via
+            <code className="text-orange-500">pacifica --mcp</code>
+            <span className="text-neutral-600">(Ctrl+C to stop)</span>
           </div>
         )}
         {patterns.length > 0 ? (
@@ -296,16 +272,6 @@ export default async function FeedPage() {
           </div>
         )}
       </section>
-
-      {/* ── Separator ── */}
-      <Separator />
-
-      {/* ── Social Intelligence ── */}
-      <div className="border-b border-neutral-500/20 py-2">
-        <SocialSignalsPanel
-          socialData={Object.keys(socialData).length > 0 ? socialData : undefined}
-        />
-      </div>
 
       {/* ── Separator ── */}
       <Separator />
