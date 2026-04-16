@@ -26,6 +26,14 @@ Thumbs.db
 # Claude Code working files
 .claude/
 
+# Internal dev artifacts (not shipped)
+plans/
+agents/
+AGENTS.md
+CONTEXT.md
+DEMO_GUIDE.md
+PROPOSAL.md
+
 # Logs
 *.log
 npm-debug.log*
@@ -42,3 +50,4 @@ web/.next/
 web/.vercel/
 web/.wrangler/
 web/out/
+web/node_modules/
