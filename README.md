@@ -18,6 +18,12 @@
 
 </div>
 
+<div align="center">
+
+![Pacifica CLI demo](web/public/demo.gif)
+
+</div>
+
 ---
 
 ## What is this?
