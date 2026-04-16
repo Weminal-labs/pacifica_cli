@@ -4,7 +4,7 @@ export default defineConfig({
   entry: {
     cli: 'src/cli/index.ts',
     mcp: 'src/mcp/server.ts',
-    'intelligence-api': 'src/intelligence-api/server.ts',
+    'mcp-http': 'src/mcp/server-http.ts',
   },
   format: ['esm'],
   target: 'node18',
