@@ -175,63 +175,151 @@ const CATEGORIES: Category[] = [
 const SETUP_TABS = ["Claude Desktop", "claude.ai (Web)", "Claude Code", "Cursor"] as const;
 type SetupTab = (typeof SETUP_TABS)[number];
 
-const SETUP_CONTENT: Record<SetupTab, { steps: string[]; config: string }> = {
+interface SetupStep {
+  text: string;
+  link?: { url: string; label: string };
+  code?: string;
+}
+
+const SETUP_CONTENT: Record<SetupTab, { steps: SetupStep[]; config: string; note?: string }> = {
   "Claude Desktop": {
     steps: [
-      "Download Claude Desktop from claude.ai/download",
-      "Edit ~/Library/Application Support/Claude/claude_desktop_config.json",
-      "Add the config below and restart Claude Desktop",
-      "Click the hammer icon to see 23 Pacifica tools",
+      {
+        text: "Download and install Claude Desktop",
+        link: { url: "https://claude.ai/download", label: "claude.ai/download" },
+      },
+      {
+        text: "Clone the Pacifica CLI repository",
+        code: "git clone https://github.com/Weminal-labs/pacifica_cli.git && cd pacifica_cli && pnpm install",
+      },
+      {
+        text: "Initialize your Pacifica account (you need a wallet from test-app.pacifica.fi with test USDC from the Faucet)",
+        link: { url: "https://test-app.pacifica.fi", label: "test-app.pacifica.fi" },
+        code: "npx tsx src/cli/index.ts init --testnet",
+      },
+      {
+        text: "Open the Claude Desktop config file. On macOS:",
+        code: "open ~/Library/Application\\ Support/Claude/claude_desktop_config.json",
+      },
+      {
+        text: "Add the Pacifica MCP server config (see below). Replace the path with your actual clone location.",
+      },
+      {
+        text: "Restart Claude Desktop (Cmd+Q, then reopen). Click the hammer icon \u2014 you should see 23 Pacifica tools.",
+      },
     ],
     config: `{
   "mcpServers": {
     "pacifica": {
       "command": "npx",
-      "args": ["tsx", "/path/to/pacifica_cli/src/mcp/server.ts"]
+      "args": [
+        "tsx",
+        "/Users/YOUR_USERNAME/pacifica_cli/src/mcp/server.ts"
+      ]
     }
   }
 }`,
+    note: "Replace /Users/YOUR_USERNAME/pacifica_cli with the actual path where you cloned the repo. Run 'pwd' in terminal inside the project folder to get it.",
   },
   "claude.ai (Web)": {
     steps: [
-      "Start the HTTP MCP server: npx tsx src/mcp/server-http.ts",
-      "Expose via tunnel: ngrok http 4243",
-      "Add the tunnel URL to Claude Desktop config as remote MCP",
-      "Restart Claude Desktop \u2014 tools are now available remotely",
+      {
+        text: "Clone and set up the Pacifica CLI (same as Claude Desktop steps 2\u20133 above)",
+        code: "git clone https://github.com/Weminal-labs/pacifica_cli.git && cd pacifica_cli && pnpm install\nnpx tsx src/cli/index.ts init --testnet",
+      },
+      {
+        text: "Start the HTTP MCP server (runs on port 4243)",
+        code: "npx tsx src/mcp/server-http.ts",
+      },
+      {
+        text: "In a new terminal, expose it publicly with ngrok (free account required)",
+        link: { url: "https://ngrok.com", label: "ngrok.com" },
+        code: "ngrok http 4243",
+      },
+      {
+        text: "Copy the ngrok URL (looks like https://xxxx-xx-xx.ngrok-free.app) and add /sse at the end",
+      },
+      {
+        text: "Add the URL to your Claude Desktop config as a remote MCP server (see below)",
+        code: "open ~/Library/Application\\ Support/Claude/claude_desktop_config.json",
+      },
+      {
+        text: "Restart Claude Desktop. The tools now work through the tunnel \u2014 you can use them from any device.",
+      },
     ],
     config: `{
   "mcpServers": {
     "pacifica": {
-      "url": "https://your-tunnel-url.ngrok.app/sse"
+      "url": "https://xxxx-xx-xx.ngrok-free.app/sse"
     }
   }
 }`,
+    note: "Replace the URL with your actual ngrok tunnel URL. The tunnel must be running for the connection to work. For persistent tunnels, use ngrok's paid plan or Cloudflare Tunnel (cloudflared tunnel --url http://localhost:4243).",
   },
   "Claude Code": {
     steps: [
-      "Clone the repo and install dependencies",
-      "cd into the project directory",
-      "Run 'claude' \u2014 it auto-detects the MCP server",
+      {
+        text: "Install Claude Code (Anthropic's CLI for developers)",
+        link: { url: "https://docs.anthropic.com/en/docs/claude-code", label: "docs.anthropic.com/claude-code" },
+        code: "npm install -g @anthropic-ai/claude-code",
+      },
+      {
+        text: "Clone the Pacifica CLI repository",
+        code: "git clone https://github.com/Weminal-labs/pacifica_cli.git && cd pacifica_cli && pnpm install",
+      },
+      {
+        text: "Initialize your Pacifica account",
+        code: "npx tsx src/cli/index.ts init --testnet",
+      },
+      {
+        text: "Start Claude Code inside the project \u2014 it auto-detects the MCP server from the repo config",
+        code: "claude",
+      },
     ],
-    config: `cd pacifica_cli
-pnpm install
-claude`,
+    config: `# No config needed! Claude Code auto-detects
+# the MCP server from this repository.
+#
+# Just cd into the project and run:
+cd pacifica_cli
+claude
+
+# Then try: "What are my positions?"`,
   },
   Cursor: {
     steps: [
-      "Open your project in Cursor",
-      "Edit .cursor/mcp.json in your project root",
-      "Add the config below",
-      "Restart Cursor",
+      {
+        text: "Clone the Pacifica CLI and install dependencies",
+        code: "git clone https://github.com/Weminal-labs/pacifica_cli.git && cd pacifica_cli && pnpm install",
+      },
+      {
+        text: "Initialize your Pacifica account",
+        link: { url: "https://test-app.pacifica.fi", label: "test-app.pacifica.fi" },
+        code: "npx tsx src/cli/index.ts init --testnet",
+      },
+      {
+        text: "Open the project folder in Cursor",
+        code: "cursor .",
+      },
+      {
+        text: "Create .cursor/mcp.json in the project root with the config below",
+        code: "mkdir -p .cursor && nano .cursor/mcp.json",
+      },
+      {
+        text: "Restart Cursor. The Pacifica tools will appear in the AI chat.",
+      },
     ],
     config: `{
   "mcpServers": {
     "pacifica": {
       "command": "npx",
-      "args": ["tsx", "/path/to/pacifica_cli/src/mcp/server.ts"]
+      "args": [
+        "tsx",
+        "./src/mcp/server.ts"
+      ]
     }
   }
 }`,
+    note: "Cursor runs the MCP server relative to the project root, so you can use ./src/mcp/server.ts instead of an absolute path.",
   },
 };
 
@@ -350,17 +438,42 @@ export default function McpUsagePage() {
           <span className="absolute bottom-0 left-0 h-1.5 w-1.5 border-b border-l border-orange-500/50" />
           <span className="absolute bottom-0 right-0 h-1.5 w-1.5 border-b border-r border-orange-500/50" />
 
-          <ol className="space-y-2 mb-4">
+          <ol className="space-y-4 mb-5">
             {SETUP_CONTENT[activeSetup].steps.map((step, i) => (
               <li key={i} className="flex gap-3 text-sm">
-                <span className="text-orange-500 font-mono font-bold shrink-0">
+                <span className="text-orange-500 font-mono font-bold shrink-0 mt-0.5">
                   {i + 1}.
                 </span>
-                <span className="text-neutral-300">{step}</span>
+                <div className="flex-1 space-y-2">
+                  <span className="text-neutral-300">{step.text}</span>
+                  {step.link && (
+                    <a
+                      href={step.link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-2 text-orange-400 hover:text-orange-300 underline underline-offset-2 text-sm font-mono"
+                    >
+                      {step.link.label} &rarr;
+                    </a>
+                  )}
+                  {step.code && (
+                    <div className="relative mt-1.5">
+                      <pre className="bg-black/60 border border-neutral-500/10 px-3 py-2 text-[12px] font-mono text-green-400/90 overflow-x-auto whitespace-pre-wrap">
+                        {step.code}
+                      </pre>
+                      <div className="absolute top-1 right-1">
+                        <CopyButton text={step.code} />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </li>
             ))}
           </ol>
 
+          <p className="text-[11px] font-mono text-neutral-500 uppercase tracking-wider mb-2">
+            Config to add
+          </p>
           <div className="relative">
             <pre className="bg-black/50 border border-neutral-500/10 px-4 py-3 text-sm font-mono text-neutral-300 overflow-x-auto">
               {SETUP_CONTENT[activeSetup].config}
@@ -369,6 +482,13 @@ export default function McpUsagePage() {
               <CopyButton text={SETUP_CONTENT[activeSetup].config} />
             </div>
           </div>
+
+          {SETUP_CONTENT[activeSetup].note && (
+            <div className="mt-3 flex gap-2 text-[11px] font-mono text-neutral-500 bg-orange-500/5 border border-orange-500/10 px-3 py-2">
+              <span className="text-orange-500 shrink-0">Note:</span>
+              <span>{SETUP_CONTENT[activeSetup].note}</span>
+            </div>
+          )}
         </div>
       </section>
 
