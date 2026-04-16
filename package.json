@@ -6,7 +6,8 @@
   "bin": {
     "pacifica": "dist/cli.js",
     "pacifica-cli": "dist/cli.js",
-    "pacifica-mcp": "dist/mcp.js"
+    "pacifica-mcp": "dist/mcp.js",
+    "pacifica-mcp-http": "dist/mcp-http.js"
   },
   "scripts": {
     "dev": "tsx src/cli/index.ts",

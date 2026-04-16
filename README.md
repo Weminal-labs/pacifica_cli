@@ -99,7 +99,7 @@ pacifica trade buy BTC 0.01 --leverage 3
 
 The MCP server gives Claude 23 tools to read markets, place trades, manage patterns, and run backtests — all with built-in guardrails.
 
-### Claude Desktop
+### Option A: Claude Desktop App (local — recommended)
 
 Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
@@ -118,16 +118,57 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
 
 Restart Claude Desktop. You'll see the hammer icon — click it to see all 23 Pacifica tools.
 
-### Claude Code (CLI)
+### Option B: claude.ai (web) via HTTP/SSE Server
+
+claude.ai doesn't support local MCP servers. You need to run the HTTP server and expose it via a tunnel:
+
+**Step 1 — Start the HTTP MCP server:**
+
+```bash
+npx tsx src/mcp/server-http.ts
+# Server starts at http://localhost:4243
+```
+
+**Step 2 — Expose via tunnel (pick one):**
+
+```bash
+# ngrok
+ngrok http 4243
+
+# Cloudflare Tunnel
+cloudflared tunnel --url http://localhost:4243
+
+# localtunnel
+npx localtunnel --port 4243
+```
+
+**Step 3 — Add to Claude Desktop config as remote MCP:**
+
+```json
+{
+  "mcpServers": {
+    "pacifica": {
+      "url": "https://your-tunnel-url.ngrok.app/sse"
+    }
+  }
+}
+```
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/sse` | GET | SSE stream — MCP clients connect here |
+| `/messages` | POST | JSON-RPC messages for active sessions |
+| `/health` | GET | Health check |
+
+### Option C: Claude Code (terminal)
 
 ```bash
 # Claude Code auto-detects the MCP server from this repo.
-# Just cd into the project and start Claude Code:
 cd pacifica_cli
 claude
 ```
 
-### Cursor / Windsurf / Any MCP Client
+### Option D: Cursor / Windsurf / Any MCP Client
 
 Add to your MCP config (`.cursor/mcp.json`, etc.):
 
