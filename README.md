@@ -4,13 +4,17 @@
 
 **Pattern-programmable trading terminal for [Pacifica DEX](https://test-app.pacifica.fi)**
 
+[![Live site](https://img.shields.io/badge/web-pacifica--intelligence.pages.dev-orange?style=flat-square)](https://pacifica-intelligence.pages.dev)
+[![MCP Guide](https://img.shields.io/badge/MCP-setup_guide-purple?style=flat-square)](https://pacifica-intelligence.pages.dev/mcp)
+[![Slides](https://img.shields.io/badge/slides-presentation-red?style=flat-square)](https://amethyst-owl-727.faces.site/onz0fhx37iqd)
 [![Version](https://img.shields.io/badge/version-0.1.0-blue?style=flat-square)](package.json)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square&logo=node.js)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-orange?style=flat-square)](LICENSE)
-[![MCP](https://img.shields.io/badge/MCP-23_tools-purple?style=flat-square)](src/mcp/server.ts)
 [![Network](https://img.shields.io/badge/network-Solana-9945FF?style=flat-square&logo=solana)](https://solana.com)
 
 *Code your trading instinct as YAML. Test it against history. Let Claude run it.*
+
+**Live Demo:** [pacifica-intelligence.pages.dev](https://pacifica-intelligence.pages.dev) &middot; **MCP Guide:** [/mcp](https://pacifica-intelligence.pages.dev/mcp) &middot; **Patterns:** [/patterns](https://pacifica-intelligence.pages.dev/patterns) &middot; **Slides:** [view presentation](https://amethyst-owl-727.faces.site/onz0fhx37iqd)
 
 </div>
 
@@ -44,22 +48,31 @@ A CLI + MCP server for the Pacifica perpetuals DEX. You write trading rules as Y
 
 ### 2. Install and configure
 
+**From source** (recommended for hackathon judges):
+
 ```bash
-# From source (recommended during hackathon)
 git clone https://github.com/Weminal-labs/pacifica_cli.git
 cd pacifica_cli
 pnpm install
 pnpm build
-
-# Or via npm (when published)
-npm install -g pacifica-cli
+npm link    # makes `pacifica` command available globally
 ```
+
+**Via npm** (once published):
+
+```bash
+npm install -g pacifica-cli
+# or
+npx pacifica-cli init --testnet
+```
+
+**Initialize your account:**
 
 ```bash
 pacifica init --testnet
 ```
 
-The wizard asks for your private key and sets safe defaults.
+The wizard asks for your private key, sets safe defaults, and auto-seeds 9 example patterns into `~/.pacifica/patterns/`.
 
 ### 3. Your first pattern (under 2 minutes)
 
@@ -183,14 +196,16 @@ Add to your MCP config (`.cursor/mcp.json`, etc.):
 }
 ```
 
-### After npm publish (future)
+### Option E: npm (when published)
+
+Once `pacifica-cli` is on npm, no clone needed:
 
 ```json
 {
   "mcpServers": {
     "pacifica": {
       "command": "npx",
-      "args": ["-y", "pacifica-cli", "--mcp"]
+      "args": ["-y", "pacifica-cli", "pacifica-mcp"]
     }
   }
 }

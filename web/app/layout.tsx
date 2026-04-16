@@ -41,6 +41,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 MCP
               </Link>
               <a
+                href="https://amethyst-owl-727.faces.site/onz0fhx37iqd"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-white transition-colors"
+              >
+                Slides
+              </a>
+              <a
                 href="https://github.com/Weminal-labs/pacifica_cli"
                 target="_blank"
                 rel="noopener noreferrer"
