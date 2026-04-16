@@ -174,6 +174,7 @@ const CACHE_TTL_ACCOUNT = 2_000; //  2 s for account data
 
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 1_000;
+const REQUEST_TIMEOUT_MS = 15_000; // 15s per-request timeout
 const RETRY_JITTER_MAX_MS = 200;
 
 // ---------------------------------------------------------------------------
@@ -780,7 +781,10 @@ export class PacificaClient {
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const response = await fetch(url, init);
+        const response = await fetch(url, {
+          ...init,
+          signal: init.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
 
         if (response.ok) {
           return response;
