@@ -479,18 +479,3 @@ cd web && pnpm dev
      └────────────────────────────────────────────────┘
 ```
 
----
-
-## Built for The Synthesis Hackathon
-
-| Track | Tech |
-|-------|------|
-| Pacifica DEX | Perpetuals, Ed25519 signing, WebSocket |
-| Claude MCP | 23 tools, pattern primitive, guardrails |
-| Solana | Keypair auth, base58 |
-
-<div align="center">
-
-**[Pacifica DEX](https://test-app.pacifica.fi)** &middot; **[Report an Issue](../../issues)** &middot; **[The Synthesis](https://synthesis.so)**
-
-</div>
